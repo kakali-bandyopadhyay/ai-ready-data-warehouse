@@ -16,19 +16,31 @@ The inputs deliberately include a repeated holding, an orphan company reference,
 
 The pipeline uses ELT: generated CSV files are loaded as raw dbt seeds, and SQL models do the type casting, deduplication, enrichment, and dimensional modeling inside Postgres. The staging layer removes invalid references, the intermediate layer enriches holdings and transactions, and the marts expose two facts with fund, company, and date dimensions. Each mart has a dbt model contract. Company history is snapshot-backed and carries parent group identifiers.
 
-The holdings fact is configured to merge keyed by holding ID and reprocess a 30-day date overlap. Transactions use merge keyed by transaction ID and re-read a 90-day ingestion overlap so a late record with an old business date can be incorporated. The runner first uses `dbt build` to create staging and the baseline snapshot in DAG order. It then promotes and reloads the generated company change, runs another build to create its SCD2 version, verifies that two versions and one current row exist, and runs one more build for the fact checksum idempotency comparison. These checks have not been observed in an end-to-end run here. Changes arriving outside the documented window require a full refresh.
+![dbt lineage for the synthetic warehouse](img/dbt_lineage.png)
+*Synthetic data: dbt docs lineage graph for the local PostgreSQL build.*
+
+The holdings fact is configured to merge keyed by holding ID and reprocess a 30-day date overlap. Transactions use merge keyed by transaction ID and re-read a 90-day ingestion overlap so a late record with an old business date can be incorporated. The runner first uses `dbt build` to create staging and the baseline snapshot in DAG order. It then promotes and reloads the generated company change, runs another build to create its SCD2 version, verifies that two versions and one current row exist, and runs one more build for the fact checksum idempotency comparison. The verified local run results are recorded in [`FINDINGS.md`](../FINDINGS.md). Changes arriving outside the documented window require a full refresh.
+
+![Snowflake SCD2 query for synthetic company history](img/snowflake_scd2_query.png)
+*Synthetic data: Snowflake `dim_company` shows two C0001 versions; the old closes at 17:20:00.249 UTC as the new opens, with one current row.*
 
 Configured data controls include dbt source freshness, standard uniqueness/null/relationship/value tests, holdings reconciliation against the latest daily NAV snapshot with a 25% illustrative tolerance, a future valuation check, and a single-current-company check. The pytest suite contains checks for deterministic generation, defect creation, project contracts, runner order, vector-search behavior, and firm-neutral content. The local suite passed; its recorded result is in [`FINDINGS.md`](../FINDINGS.md). Synthetic records and rules are examples, not investment advice or business controls.
+
+![pytest result for the synthetic warehouse](img/pytest_result.png)
+*Synthetic data: full pytest suite result with integration tests enabled.*
 
 ## AI-ready layer
 
 `ai_company_profile` presents selected non-PII attributes and source lineage. `ai_text_chunks` contains short note text with source, as-of date, owner, and classification. PostgreSQL stores an 8-dimensional pgvector column and an HNSW cosine index. The default vectors derive deterministically from text hashes and are **test only; not semantic**. They demonstrate load/index/query wiring but do not establish retrieval quality. An optional OpenAI provider is available behind an explicit CLI flag and an environment variable. It can incur API charges and is not needed for CI.
 
-The search demo is implemented to return the top `k` note chunks with provenance metadata. A consuming application could pass that context to a language model, but this project does not include an LLM call, prompt, or answer-quality evaluation. End-to-end search has not been verified here.
+The search demo returns the top `k` note chunks with provenance metadata, as shown in the saved result. A consuming application could pass that context to a language model, but this project does not include an LLM call, prompt, or answer-quality evaluation. The embeddings are deterministic test vectors, not semantic.
+
+![Vector search result for synthetic notes](img/vector_search_result.png)
+*Synthetic data: pgvector top-3 result; embeddings are deterministic test vectors, not semantic.*
 
 ## Platform comparison and results
 
-The local PostgreSQL end-to-end run is recorded in [`FINDINGS.md`](../FINDINGS.md). Separate Snowflake and Databricks dbt targets, staged/seeded source loading, platform-specific table configurations, and measurement scripts are implemented but have not been run. No timing, credit, DBU, or cloud row-count measurements are available, so there are no cloud results in this case study.
+The local PostgreSQL, Snowflake, and Databricks run results are recorded in [`FINDINGS.md`](../FINDINGS.md). The reported platform timings reflect different service tiers and include serverless warehouse startup for Databricks, so they are not a like-for-like benchmark.
 
 The Snowflake setup uses an XS auto-suspending warehouse, staged loads, a resource monitor when permitted, and holdings clustering. Snowflake offers managed warehouse operations and micro-partition pruning; clustering maintenance and compute can still cost money. The Databricks setup uses Delta tables and a serverless SQL warehouse, with liquid clustering. Unity Catalog tag emission is opt-in by edition and permission. These configurations are not measured comparisons; see the runbooks, [cloud vector search notes](CLOUD_VECTOR_SEARCH.md), and [`FINDINGS.md`](../FINDINGS.md) for setup and result status.
 

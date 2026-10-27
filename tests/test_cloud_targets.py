@@ -9,6 +9,7 @@ import yaml
 import pytest
 from generator.generate import generate
 from pipeline import measure_cloud_run as measure
+from pipeline import teardown_cloud
 from pipeline.measure_cloud_run import (
     RAW_COLUMN_TYPES,
     build_measurement_record,
@@ -490,6 +491,34 @@ def test_cloud_scd2_rejects_more_than_two_versions(monkeypatch) -> None:
     monkeypatch.setattr(measure, "_cloud_connect", lambda _target: Connection())
     with pytest.raises(RuntimeError, match="versions=3, current=1"):
         measure._verify_cloud_scd2("databricks")
+
+
+def test_databricks_default_teardown_never_deletes_warehouse(monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_CATALOG", "workspace")
+    statements: list[str] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, sql: str) -> None:
+            statements.append(sql)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(measure, "_databricks_connect", lambda: Connection())
+    teardown_cloud.teardown_databricks()
+    assert len(statements) == len(teardown_cloud.DEMO_SCHEMAS)
+    assert all(sql.startswith("DROP SCHEMA IF EXISTS workspace.AI_READY_DEMO_") for sql in statements)
+    assert not any("WAREHOUSE" in sql.upper() for sql in statements)
 
 
 def test_cloud_measurement_runs_load_build_scd2_and_idempotency_in_order(

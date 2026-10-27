@@ -16,14 +16,17 @@ DEMO_SCHEMAS = (
 )
 
 
-def _confirmation(target: str) -> bool:
+def _confirmation(target: str, *, delete_warehouse: bool = False) -> bool:
     if target == "snowflake":
         expected = "DROP AI_READY_DEMO"
         message = "This drops the dedicated demo database and warehouse. "
     else:
         catalog = os.getenv("DATABRICKS_CATALOG", "")
-        expected = f"DROP {catalog}.AI_READY_DEMO_SCHEMAS_AND_WAREHOUSE"
-        message = "This drops the demo-prefixed schemas in the selected catalog and deletes its SQL warehouse. "
+        suffix = "_AND_WAREHOUSE" if delete_warehouse else ""
+        expected = f"DROP {catalog}.AI_READY_DEMO_SCHEMAS{suffix}"
+        message = "This drops the demo-prefixed schemas in the selected catalog. "
+        if delete_warehouse:
+            message += "It also deletes the selected SQL warehouse. "
     print(message + f"Type {expected!r} to continue.")
     return input("> ").strip() == expected
 
@@ -54,13 +57,17 @@ def teardown_snowflake() -> None:
         connection.close()
 
 
-def teardown_databricks() -> None:
+def teardown_databricks(*, delete_warehouse: bool = False) -> None:
     catalog = os.getenv("DATABRICKS_CATALOG", "")
     warehouse_id = os.getenv("DATABRICKS_WAREHOUSE_ID", "")
-    if not catalog or not warehouse_id:
-        raise RuntimeError("Set DATABRICKS_CATALOG and DATABRICKS_WAREHOUSE_ID before teardown")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", catalog) or not re.fullmatch(r"[A-Za-z0-9_-]+", warehouse_id):
-        raise ValueError("Catalog and warehouse ID must contain only letters, digits, underscores, and hyphens")
+    if not catalog:
+        raise RuntimeError("Set DATABRICKS_CATALOG before teardown")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", catalog):
+        raise ValueError("Catalog must contain only letters, digits, and underscores")
+    if delete_warehouse and not warehouse_id:
+        raise RuntimeError("Set DATABRICKS_WAREHOUSE_ID to delete the SQL warehouse")
+    if delete_warehouse and not re.fullmatch(r"[A-Za-z0-9_-]+", warehouse_id):
+        raise ValueError("Warehouse ID must contain only letters, digits, underscores, and hyphens")
     from pipeline.measure_cloud_run import _databricks_connect
 
     connection = _databricks_connect()
@@ -70,28 +77,35 @@ def teardown_databricks() -> None:
                 cursor.execute(f"DROP SCHEMA IF EXISTS {catalog}.{schema} CASCADE")
     finally:
         connection.close()
-    try:
-        from databricks.sdk import WorkspaceClient  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError("Install requirements-cloud.txt to delete the Databricks SQL warehouse") from exc
-    host = os.environ["DATABRICKS_HOST"].rstrip("/")
-    if not host.startswith("https://"):
-        host = "https://" + host.removeprefix("http://")
-    WorkspaceClient(host=host, token=os.environ["DATABRICKS_TOKEN"]).warehouses.delete(id=warehouse_id)
+    if delete_warehouse:
+        try:
+            from databricks.sdk import WorkspaceClient  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("Install requirements-cloud.txt to delete the Databricks SQL warehouse") from exc
+        host = os.environ["DATABRICKS_HOST"].rstrip("/")
+        if not host.startswith("https://"):
+            host = "https://" + host.removeprefix("http://")
+        WorkspaceClient(host=host, token=os.environ["DATABRICKS_TOKEN"]).warehouses.delete(id=warehouse_id)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=("snowflake", "databricks"), required=True)
+    parser.add_argument(
+        "--delete-warehouse", action="store_true",
+        help="also delete the selected Databricks SQL warehouse (opt-in; unavailable on Free Edition)",
+    )
     args = parser.parse_args(argv)
+    if args.delete_warehouse and args.target != "databricks":
+        parser.error("--delete-warehouse is only available with --target databricks")
     try:
-        if not _confirmation(args.target):
+        if not _confirmation(args.target, delete_warehouse=args.delete_warehouse):
             print("Teardown cancelled; no resources were changed.")
             return 2
         if args.target == "snowflake":
             teardown_snowflake()
         else:
-            teardown_databricks()
+            teardown_databricks(delete_warehouse=args.delete_warehouse)
     except Exception as exc:
         print(f"Cloud teardown failed: {exc}", file=sys.stderr)
         return 1

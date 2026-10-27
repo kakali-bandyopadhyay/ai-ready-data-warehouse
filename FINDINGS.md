@@ -33,6 +33,7 @@
 - SCD2 (C0001 exactly 2 versions, 1 current) and idempotency checks passed.
 - DBUs: not captured — no billing rows were visible to the run; Free Edition billing
   visibility is limited and usage can be delayed.
+- system.billing.usage is readable on Free Edition but showed no SQL-warehouse rows for this run (only assistant usage), so DBUs were not captured.
 
 ## Cross-platform summary (same synthetic data, same dbt models)
 | Platform | Tier used | Load | Builds | Outcome |
@@ -40,6 +41,13 @@
 | PostgreSQL 16 + pgvector | Local Docker | — | 3 builds, ERROR=0 | SCD2 + idempotency pass; 88 tests; CI green |
 | Snowflake | Trial, X-Small, auto-suspend 60 s | 18.5 s | 71.1 s | Pass; 0.133 credits (hour upper bound) |
 | Databricks | Free Edition, serverless 2X-Small | 137.9 s | 393.5 s | Pass; DBUs not visible |
+
+## Teardown — 27 Oct 2026
+- Snowflake: demo database and warehouse dropped with `teardown_cloud.py`; the role,
+  key-pair service user and resource monitor were kept, so a rerun needs only
+  `snowflake_setup.sql`.
+- Databricks: the six demo schemas were dropped manually; the Free Edition SQL warehouse
+  was kept (the default teardown now preserves it).
 
 Timings reflect the tiers used (a trial X-Small warehouse vs a Free Edition 2X-Small
 serverless warehouse including start-up) and are not a like-for-like platform benchmark.

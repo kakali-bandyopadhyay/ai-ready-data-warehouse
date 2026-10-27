@@ -38,10 +38,16 @@ The script seeds generated CSVs into the dedicated raw schema using explicit `co
 
 ## Teardown (PowerShell)
 
-The command prompts for confirmation, drops the six `AI_READY_DEMO_*` schemas in the selected catalog, and deletes the selected SQL warehouse:
+By default, the command prompts for confirmation and drops only the six `AI_READY_DEMO_*` schemas in the selected catalog. It preserves the SQL warehouse. Databricks Free Edition allows exactly one SQL warehouse, and users cannot create another after deleting it, so keep the warehouse for future runs:
 
 ```powershell
 python -m pipeline.teardown_cloud --target databricks
 ```
 
-Confirm the SQL warehouse is deleted or stopped in the workspace UI, and verify no `AI_READY_DEMO_*` schema remains. The catalog itself is preserved. Remove the budget policy only if it was created solely for this experiment. Generated local CSVs can be deleted separately with `Remove-Item -Recurse -Force data\generated`.
+Verify that no `AI_READY_DEMO_*` schema remains and leave the SQL warehouse in the workspace. The catalog itself is preserved. Remove the budget policy only if it was created solely for this experiment. Generated local CSVs can be deleted separately with `Remove-Item -Recurse -Force data\generated`.
+
+On non-Free editions only, warehouse deletion is available as an explicit opt-in and requires the warehouse ID:
+
+```powershell
+python -m pipeline.teardown_cloud --target databricks --delete-warehouse
+```

@@ -27,9 +27,20 @@ pytest -q
 
 The runner creates its temporary dbt `profiles.yml` under the operating-system temp directory. Set `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_HOST`, and `POSTGRES_PORT` only if you use values other than the Compose defaults. `POSTGRES_PASSWORD` is read from the process environment; no credentials file is created. Synthetic data is written to ignored `data/generated/`.
 
+### Snapshot and SCD2 validation
+
 The runner explicitly loads raw seeds first because models read them through `source()`, which provides source freshness metadata but does not create DAG dependencies on dbt seed resources. The initial `dbt seed --full-refresh` withholds the generated future-dated C0001 change, then `dbt source freshness` and `dbt build --exclude resource_type:seed` build staging, the baseline snapshot, marts, and tests. The runner promotes the changed row with a UTC `ingested_at` and appends it to `raw.companies`; the next seed-excluded build rebuilds latest-wins staging and captures the second snapshot version in DAG order. Staging selects the maximum raw `ingested_at` per key and breaks ties with `loaded_at`. The runner verifies two history versions with one current row, fingerprints the fact tables, runs one more seed-excluded build, and fingerprints again for idempotency. The local provider vectors are test-only and not semantic. The optional real provider is `--embeddings openai`; set `OPENAI_API_KEY` in the process environment first. This makes HTTPS calls and can incur API charges.
 
+![Snowflake SCD2 query for synthetic company history](docs/img/snowflake_scd2_query.png)
+*Synthetic data: Snowflake `dim_company` shows two C0001 SCD2 versions; the old row closes at 17:20:00.249 UTC as the new row opens, with one current row.*
+
 Local end-to-end validation succeeded on **2026-10-27** with **8 funds, 400 companies, and 30 days** of data. All three dbt builds reported `Done. PASS=53 WARN=0 ERROR=0 SKIP=0 NO-OP=2 REUSED=0 TOTAL=55`. `SCD2 version check passed: C0001 versions=2, current=1`. `Idempotency check passed: fct_holdings_daily, fct_transactions row counts and checksums identical`. Pytest reported **64 passed in 39.34s**. See [FINDINGS.md](FINDINGS.md) for the recorded run results. This run predates the current `ai_company_profile` optimization; the updated query removes a repeated staging-view dependency, and its under-five-second target still needs a fresh PostgreSQL measurement.
+
+![dbt lineage for the synthetic warehouse](docs/img/dbt_lineage.png)
+*Synthetic data: dbt docs lineage graph for the local PostgreSQL build.*
+
+![pytest result for the synthetic warehouse](docs/img/pytest_result.png)
+*Synthetic data: full pytest suite result with integration tests enabled.*
 
 If pip fails on Windows with `CERTIFICATE_VERIFY_FAILED`, upgrade certifi and point Python's SSL certificate setting at its CA bundle, then retry the install:
 
@@ -41,13 +52,18 @@ python -m pip install -r requirements.txt
 
 The project pins dbt-core 1.12.5, which is in the supported 1.12 line and works with the pinned Databricks adapter (which caps dbt-core below 1.12.6). The current 1.12.6 core release cannot be paired with that adapter pin.
 
+### AI-ready vector search
+
 To search after the run:
 
 ```powershell
 python -m examples.vector_search_demo "synthetic software company growth" -k 5
 ```
 
-The demo is implemented to return nearest chunks with source, as-of date, owner, and classification. `--provider openai` selects the optional API provider. `--skip-embeddings` leaves the vector column empty, so the search demo has no results. End-to-end retrieval has not been verified here.
+The demo returns nearest chunks with source, as-of date, owner, and classification. The saved result shows local retrieval wiring with deterministic test vectors, not semantic embeddings. `--provider openai` selects the optional API provider. `--skip-embeddings` leaves the vector column empty, so the search demo has no results.
+
+![Vector search result for synthetic notes](docs/img/vector_search_result.png)
+*Synthetic data: pgvector top-3 search result; embeddings are deterministic test vectors, not semantic.*
 
 The Compose file is `compose.yaml`; the host port maps from `${POSTGRES_PORT:-5432}` to container port 5432. If 5432 is occupied, set `$env:POSTGRES_PORT = '5433'` before `docker compose up -d`. Keep that same value in the environment while running the pipeline and tests because the runner connects through `POSTGRES_PORT`.
 
