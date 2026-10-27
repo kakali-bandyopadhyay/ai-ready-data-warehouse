@@ -8,6 +8,8 @@ dbt_packages/
 logs/
 data/generated/
 .env
+*.p8
+*.pem
 profiles.yml
 *.py[cod]
 /cloud_project/seeds/*.csv

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from uuid import uuid4
 
 import pytest
+from pipeline.dbt_commands import build_dbt_command
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -76,11 +79,54 @@ def test_scd2_custom_test_is_defined() -> None:
     assert "count(*) filter (where is_current) <> 1" in macro
 
 
+def test_company_staging_keeps_latest_arrived_raw_ingestion() -> None:
+    for project in (ROOT, ROOT / "cloud_project"):
+        model = (project / "models" / "staging" / "stg_companies.sql").read_text(encoding="utf-8")
+        test_path = project / "tests" / "stg_companies_latest_ingested_at.sql"
+        if project == ROOT:
+            test_path = project / "tests" / "dbt" / "stg_companies_latest_ingested_at.sql"
+        test = test_path.read_text(encoding="utf-8")
+        assert "order by ingested_at desc, loaded_at desc" in model
+        assert "max(cast(ingested_at as timestamp))" in test
+        assert "ref('stg_companies')" in test
+        assert "source('raw', 'companies')" in test
+        assert "where cast(ingested_at" not in test.lower()
+        assert "current_utc_timestamp()" in model
+
+
+def test_future_timestamp_checks_and_snowflake_sessions_use_utc() -> None:
+    cloud_clock = (ROOT / "cloud_project" / "macros" / "current_utc_timestamp.sql").read_text(encoding="utf-8")
+    postgres_clock = (ROOT / "macros" / "current_utc_timestamp.sql").read_text(encoding="utf-8")
+    cloud_hook = (ROOT / "cloud_project" / "dbt_project.yml").read_text(encoding="utf-8")
+    cloud_session = (ROOT / "cloud_project" / "macros" / "set_session_timezone_utc.sql").read_text(encoding="utf-8")
+    for project in (ROOT, ROOT / "cloud_project"):
+        no_future_test = (project / "macros" / "test_no_future_valuations.sql").read_text(encoding="utf-8")
+        assert "current_utc_timestamp()" in no_future_test
+    assert "sysdate()" in cloud_clock
+    assert "convert_timezone(current_timezone(), 'UTC'" in cloud_clock
+    assert "at time zone 'UTC'" in postgres_clock
+    assert "set_session_timezone_utc()" in cloud_hook
+    assert "alter session set timezone = 'UTC'" in cloud_session
+    assert "ALTER USER AIRDW_DBT SET TIMEZONE = 'UTC'" in (ROOT / "docs" / "runbooks" / "SNOWFLAKE.md").read_text(encoding="utf-8")
+
+
+def test_every_deduplicating_staging_model_uses_loaded_at_as_a_tiebreaker() -> None:
+    for project in (ROOT, ROOT / "cloud_project"):
+        staging = project / "models" / "staging"
+        deduplicating = [path for path in staging.glob("*.sql")
+                         if "row_number() over" in path.read_text(encoding="utf-8").lower()]
+        assert deduplicating
+        for path in deduplicating:
+            sql = path.read_text(encoding="utf-8").lower()
+            assert re.search(r"\bloaded_at\b[^,]*\bdesc\b", sql), path
+
+
 def test_scd2_snapshot_persists_changed_company_version() -> None:
     if os.getenv("WAREHOUSE_INTEGRATION") != "1":
         pytest.skip("Set WAREHOUSE_INTEGRATION=1 after pipeline has loaded the snapshot")
     import psycopg  # type: ignore
-    from pipeline.run import ROOT, create_profile
+    from generator.generate import generate, promote_changed_company_version
+    from pipeline.run import ROOT, append_changed_company_version, create_profile
 
     password = os.environ["POSTGRES_PASSWORD"]
     connection = psycopg.connect(
@@ -92,17 +138,49 @@ def test_scd2_snapshot_persists_changed_company_version() -> None:
         with connection.cursor() as cursor:
             cursor.execute("select sector from snapshots.company_history where company_id = 'C0001' and dbt_valid_to is null")
             current = cursor.fetchone()
-            next_sector = "business_services" if not current or current[0] != "business_services" else "consumer"
-            cursor.execute("""update raw.companies set sector = %s, ingested_at = current_timestamp
-                              where company_id = 'C0001' and ingested_at =
-                                (select max(ingested_at) from raw.companies where company_id = 'C0001')""",
-                           (next_sector,))
+            assert current is not None, "local pipeline must create a baseline C0001 snapshot"
+            next_sector = "business_services" if current[0] != "business_services" else "consumer"
+            cursor.execute("select count(*) from raw.companies where company_id = 'C0001'")
+            raw_versions_before = cursor.fetchone()[0]
     connection.close()
+
+    with tempfile.TemporaryDirectory(prefix="ai-ready-scd2-source-") as data_dir:
+        counts = generate(Path(data_dir), seed=20261027, days=1, companies_count=8,
+                          as_of=datetime.now(timezone.utc).date())
+        assert counts["companies"] >= 2
+        companies_csv = Path(data_dir) / "companies.csv"
+        with companies_csv.open("r", newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            fieldnames = reader.fieldnames
+            rows = list(reader)
+        changed = max((row for row in rows if row["company_id"] == "C0001"),
+                      key=lambda row: row["ingested_at"])
+        changed["sector"] = next_sector
+        with companies_csv.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        promote_changed_company_version(companies_csv)
+        append_changed_company_version(companies_csv)
+
+    with psycopg.connect(
+        host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
+        dbname=os.getenv("POSTGRES_DB", "warehouse"), user=os.getenv("POSTGRES_USER", "warehouse"),
+        password=password,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("select count(*) from raw.companies where company_id = 'C0001'")
+            assert cursor.fetchone()[0] == raw_versions_before + 1, "changed C0001 row must append to raw"
+            cursor.execute("""select employee_count, annual_revenue from raw.companies
+                              where company_id = 'C0001' order by ingested_at desc limit 1""")
+            appended = cursor.fetchone()
+            assert appended is not None and isinstance(appended[0], int)
+            assert int(appended[1]) == appended[1]
 
     with tempfile.TemporaryDirectory(prefix="ai-ready-scd2-test-") as profile_dir:
         create_profile(Path(profile_dir), "postgres")
-        subprocess.run(["dbt", "snapshot", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
-                        "--target", "postgres"], cwd=ROOT, check=True)
+        subprocess.run(build_dbt_command("snapshot", project_dir=ROOT, profiles_dir=Path(profile_dir),
+                                         target="postgres"), cwd=ROOT, check=True)
 
     with psycopg.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
@@ -152,9 +230,10 @@ def test_late_business_date_is_loaded_by_ingestion_time_lookback() -> None:
             create_profile(Path(profile_dir), "postgres")
             # Run only the existing incremental fact. No full refresh and no
             # seed reload: the inserted raw row must arrive through the merge.
-            dbt_args = ["dbt", "build", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
-                        "--target", "postgres", "--select", "fct_transactions",
-                        "--exclude", "resource_type:seed"]
+            dbt_args = build_dbt_command(
+                "build", "--select", "fct_transactions", "--exclude", "resource_type:seed",
+                project_dir=ROOT, profiles_dir=Path(profile_dir), target="postgres",
+            )
             assert "--full-refresh" not in dbt_args
             subprocess.run(dbt_args, cwd=ROOT, check=True)
 

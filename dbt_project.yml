@@ -9,7 +9,6 @@ test-paths: [tests/dbt]
 macro-paths: [macros]
 analysis-paths: [analyses]
 docs-paths: [docs]
-target-path: target
 clean-targets: [target, dbt_packages]
 on-run-start:
   - "create extension if not exists vector"

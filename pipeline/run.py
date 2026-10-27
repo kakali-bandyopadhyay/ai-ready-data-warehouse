@@ -1,7 +1,8 @@
-"""Local orchestration: generate -> seed -> build snapshot -> reload changed seed -> verify idempotency."""
+"""Local orchestration: generate -> seed -> snapshot builds -> append SCD2 change -> verify idempotency."""
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import shutil
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +18,9 @@ if str(ROOT) not in sys.path:
     # Also support `python pipeline/run.py` from a clean checkout, where Python
     # otherwise puts only the pipeline/ directory at the front of sys.path.
     sys.path.insert(0, str(ROOT))
+
+from pipeline.dbt_commands import build_dbt_command
+from generator.generate import baseline_company_seed
 
 
 def create_profile(directory: Path, target: str) -> Path:
@@ -37,13 +42,6 @@ def create_profile(directory: Path, target: str) -> Path:
 def run_command(args: list[str], *, env: dict[str, str] | None = None, cwd: Path = ROOT) -> None:
     print("+", " ".join(args), flush=True)
     subprocess.run(args, cwd=cwd, env=env, check=True)
-
-
-def build_dbt_command(command: str, profile_dir: Path, target: str, *args: str,
-                      executable: str = "dbt") -> list[str]:
-    """Build a dbt argv list with the command chain before its global options."""
-    return [executable, *command.split(), "--project-dir", str(ROOT), "--profiles-dir", str(profile_dir),
-            "--target", target, *args]
 
 
 def mart_fingerprints() -> dict[str, tuple[int, str]]:
@@ -96,6 +94,66 @@ def verify_scd2_version(company_id: str = "C0001") -> tuple[int, int]:
     return int(versions), int(current_versions)
 
 
+def append_changed_company_version(companies_csv: Path, company_id: str = "C0001") -> None:
+    """Append the promoted company version to raw without replacing prior raw rows."""
+    from generator.generate import normalize_integer_columns
+
+    path = Path(companies_csv)
+    with path.open("r", newline="", encoding="utf-8") as stream:
+        rows = [row for row in csv.DictReader(stream) if row.get("company_id") == company_id]
+    if len(rows) < 2:
+        raise RuntimeError(f"Expected at least two generated versions for {company_id} in {path}")
+    changed = normalize_integer_columns("companies", max(rows, key=lambda row: row["ingested_at"]))
+    baseline = min(rows, key=lambda row: row["ingested_at"])
+    if changed["sector"] == baseline["sector"]:
+        raise RuntimeError(f"Generated {company_id} version does not change sector")
+    changed_at = datetime.fromisoformat(changed["ingested_at"])
+    baseline_at = datetime.fromisoformat(baseline["ingested_at"])
+    if changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=timezone.utc)
+    else:
+        changed_at = changed_at.astimezone(timezone.utc)
+    if baseline_at.tzinfo is None:
+        baseline_at = baseline_at.replace(tzinfo=timezone.utc)
+    else:
+        baseline_at = baseline_at.astimezone(timezone.utc)
+    if changed_at <= baseline_at:
+        raise RuntimeError(f"Generated {company_id} ingestion time is not newer than baseline")
+
+    try:
+        import psycopg  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install requirements.txt before appending the changed company row") from exc
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError("Set POSTGRES_PASSWORD in the environment before connecting to PostgreSQL")
+    loaded_at = datetime.fromisoformat(changed["loaded_at"])
+    if loaded_at.tzinfo is None:
+        loaded_at = loaded_at.replace(tzinfo=timezone.utc)
+    else:
+        loaded_at = loaded_at.astimezone(timezone.utc)
+    with psycopg.connect(
+        host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
+        dbname=os.getenv("POSTGRES_DB", "warehouse"), user=os.getenv("POSTGRES_USER", "warehouse"),
+        password=password,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """insert into raw.companies
+                   (company_id, company_name, sector, country_code, parent_group_id,
+                    employee_count, annual_revenue, classification, owner, ingested_at, loaded_at)
+                   values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    changed["company_id"], changed["company_name"], changed["sector"],
+                    changed["country_code"], changed["parent_group_id"] or None,
+                    int(changed["employee_count"]), int(changed["annual_revenue"]),
+                    changed["classification"], changed["owner"], changed_at,
+                    loaded_at,
+                ),
+            )
+    print(f"Appended raw company version: {company_id} sector={changed['sector']} ingested_at={changed['ingested_at']}")
+
+
 def wait_for_postgres(timeout_seconds: int = 60) -> None:
     """Wait for the configured PostgreSQL service to accept connections."""
     try:
@@ -138,34 +196,40 @@ def run_pipeline(*, target: str = "postgres", days: int = 30, companies: int = 4
         env["DBT_PROFILES_DIR"] = str(profile_dir)
         # Raw relations are declared as sources, so their freshness metadata
         # does not create DAG edges from the dbt seed resources. Load them first.
-        run_command(build_dbt_command("seed", profile_dir, target, "--full-refresh",
-                                      executable=dbt_executable), env=env)
-        run_command(build_dbt_command("source freshness", profile_dir, target,
+        # A generated future-dated C0001 version is not raw until explicitly
+        # promoted after the baseline snapshot. Seed the arrived baseline only.
+        with baseline_company_seed(data_dir / "companies.csv"):
+            run_command(build_dbt_command("seed", "--full-refresh", project_dir=ROOT,
+                                          profiles_dir=profile_dir, target=target,
+                                          executable=dbt_executable), env=env)
+        run_command(build_dbt_command("source freshness", project_dir=ROOT,
+                                      profiles_dir=profile_dir, target=target,
                                       executable=dbt_executable), env=env)
         # Keep seeds out of every build: sources are not seed dependencies, and
         # the explicit initial load ensures staging has raw relations to read.
-        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+        run_command(build_dbt_command("build", "--exclude", "resource_type:seed", project_dir=ROOT,
+                                      profiles_dir=profile_dir, target=target,
                                       executable=dbt_executable), env=env)
-        # Expose the generated attribute change and reload raw seeds.
-        # Reload only the changed seed without full refresh. dbt truncates and
-        # inserts changed seed contents, retaining dependent views. The build
-        # below rebuilds staging and advances the snapshot in DAG order.
+        # Expose the generated change as a new raw event. Raw is append-only;
+        # the following build rebuilds latest-wins staging and advances SCD2.
         promote_changed_company_version(data_dir / "companies.csv")
-        run_command(build_dbt_command("seed", profile_dir, target, "--select", "companies",
-                                      executable=dbt_executable), env=env)
-        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+        append_changed_company_version(data_dir / "companies.csv")
+        run_command(build_dbt_command("build", "--exclude", "resource_type:seed", project_dir=ROOT,
+                                      profiles_dir=profile_dir, target=target,
                                       executable=dbt_executable), env=env)
         verify_scd2_version()
         first_result = mart_fingerprints()
         # Compare the settled SCD2 build with one more build for idempotency.
-        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+        run_command(build_dbt_command("build", "--exclude", "resource_type:seed", project_dir=ROOT,
+                                      profiles_dir=profile_dir, target=target,
                                       executable=dbt_executable), env=env)
         second_result = mart_fingerprints()
         if first_result != second_result:
             raise RuntimeError(f"Idempotency check failed; first={first_result}, second={second_result}")
         table_names = ", ".join(first_result)
         print(f"Idempotency check passed: {table_names} row counts and checksums identical")
-        run_command(build_dbt_command("docs generate", profile_dir, target,
+        run_command(build_dbt_command("docs generate", project_dir=ROOT,
+                                      profiles_dir=profile_dir, target=target,
                                       executable=dbt_executable), env=env)
         if not skip_embeddings:
             from pipeline.vector_search import populate_embeddings

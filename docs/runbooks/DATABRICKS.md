@@ -11,6 +11,8 @@ The Databricks target uses the separate [cloud dbt project](../../cloud_project/
 
 ## Build and measure (PowerShell)
 
+Before seeding, the loader writes timestamp fields as UTC-naive CSV values for the `TIMESTAMP_NTZ` columns declared in the seed properties. The initial company seed withholds the future-dated C0001 change; after the baseline snapshot the runner promotes that row with a UTC ingestion time and reloads it. Raw-table types are validated after both loads, before freshness or model builds.
+
 Activate the `.venv-cloud` environment created from the Snowflake runbook or create it using the same setup steps there, then set the Databricks connection values:
 
 ```powershell
@@ -32,7 +34,7 @@ After validating cost and table access, use the larger synthetic run:
 python -m pipeline.measure_cloud_run --target databricks --days 730 --companies 20000
 ```
 
-The script seeds generated CSVs into the dedicated raw schema, runs freshness, snapshot, build, docs, row counts, and queries `system.billing.usage` for DBUs associated with `DATABRICKS_WAREHOUSE_ID`. It writes a dated, data-size-labelled JSON result under `results/cloud_runs/`. System billing rows can be delayed or inaccessible; in that case DBUs are `null` with a status instead of a fabricated figure.
+The script seeds generated CSVs into the dedicated raw schema using explicit `column_types` from [`cloud_project/seeds/properties.yml`](../../cloud_project/seeds/properties.yml): timestamps and dates are typed, and numeric columns use declared integer/decimal precision. It validates the raw schema immediately after loading and after reloading the changed company seed. A mismatch stops the run with a `Raw schema validation failed` message before freshness or builds. For the SCD2 reload it rewrites the generated C0001 sector if needed so it differs from the current snapshot baseline, promotes the timestamp, truncates `raw.companies`, and runs `dbt seed --select companies` without `--full-refresh`. It then asserts the raw row contains the expected changed sector and a timestamp newer than baseline before build 2. It checks freshness and runs three `dbt build --exclude resource_type:seed` passes. The first captures baseline history; build 2 captures the changed version and verifies two SCD2 versions; it fingerprints both fact tables, builds once more, and compares row counts/checksums for idempotency. It then records row counts and timings in a dated, data-size-labelled JSON result under `results/cloud_runs/`, and queries `system.billing.usage` for DBUs associated with `DATABRICKS_WAREHOUSE_ID`. System billing rows can be delayed or inaccessible; in that case DBUs are `null` with a status instead of a fabricated figure. Snapshot work runs in DAG order inside each build; it is not a separate `dbt snapshot` step.
 
 ## Teardown (PowerShell)
 

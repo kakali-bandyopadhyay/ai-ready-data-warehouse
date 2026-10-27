@@ -8,14 +8,79 @@ import argparse
 import csv
 import json
 import random
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 FUNDS = 8
 COMPANIES = 400
 COMPANY_PREFIXES = ("Northstar", "Juniper", "Cedar", "Bluefield", "Silverline", "Harbor", "Pioneer", "Redwood")
 SECTORS = ("software", "healthcare", "industrials", "consumer", "business_services", "energy")
+INTEGER_COLUMNS = {
+    "funds": ("vintage_year",),
+    # Annual revenue is whole-dollar synthetic data and is serialized as an
+    # integer even though warehouse schemas store it in a decimal column.
+    "companies": ("employee_count", "annual_revenue"),
+}
+
+
+def normalize_integer_columns(table: str, row: dict) -> dict:
+    """Return a row with integral numeric fields represented as Python ints."""
+    normalized = dict(row)
+    for column in INTEGER_COLUMNS.get(table, ()):
+        value = normalized.get(column)
+        if value in (None, ""):
+            continue
+        try:
+            numeric = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise ValueError(f"{table}.{column} must contain an integer value: {value!r}") from exc
+        if not numeric.is_finite() or numeric != numeric.to_integral_value():
+            raise ValueError(f"{table}.{column} must contain an integer value: {value!r}")
+        normalized[column] = int(numeric)
+    return normalized
+
+
+def _parse_utc(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def write_baseline_company_seed(source: Path, destination: Path) -> int:
+    """Write companies that have arrived by now, withholding future-dated test changes."""
+    with Path(source).open("r", newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    if not fieldnames or "ingested_at" not in fieldnames:
+        raise ValueError(f"{source} is not a generated companies CSV")
+    now_utc = datetime.now(timezone.utc)
+    arrived = [row for row in rows if _parse_utc(row["ingested_at"]) <= now_utc]
+    if not arrived:
+        raise ValueError(f"{source} contains no company rows ingested by the current UTC time")
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(normalize_integer_columns("companies", row) for row in arrived)
+    return len(arrived)
+
+
+@contextmanager
+def baseline_company_seed(path: Path) -> Iterator[None]:
+    """Temporarily hide future-dated company rows while dbt loads initial raw seeds."""
+    path = Path(path)
+    original = path.read_bytes()
+    try:
+        write_baseline_company_seed(path, path)
+        yield
+    finally:
+        path.write_bytes(original)
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
@@ -25,7 +90,7 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(normalize_integer_columns(path.stem, row) for row in rows)
 
 
 def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
@@ -35,6 +100,7 @@ def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
         raise ValueError("days must be positive and companies_count must be at least 8")
     rng = random.Random(seed)
     as_of = as_of or datetime.now(timezone.utc).date()
+    # All generated ingestion/load timestamps are UTC-aware ISO-8601 values.
     loaded_at = datetime.combine(as_of, datetime.min.time(), tzinfo=timezone.utc).isoformat()
     company_baseline = datetime.combine(as_of, datetime.min.time(), tzinfo=timezone.utc).isoformat()
     out = Path(output_dir)
@@ -49,7 +115,7 @@ def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
         companies.append({"company_id": f"C{i:04d}", "company_name": f"{COMPANY_PREFIXES[i % len(COMPANY_PREFIXES)]} Company {i:04d}",
                           "sector": SECTORS[i % len(SECTORS)], "country_code": ("US", "GB", "DE", "CA")[i % 4],
                           "parent_group_id": parent, "employee_count": 80 + (i * 37) % 5000,
-                          "annual_revenue": round(5_000_000 + i * 372_000.0, 2),
+                          "annual_revenue": 5_000_000 + i * 372_000,
                           "classification": "synthetic_public", "owner": "data_platform", "ingested_at": company_baseline})
     # Changed attribute is supplied as a later source version for snapshot/SCD2 checks.
     changed = dict(companies[0]); changed["sector"] = "business_services"
@@ -140,7 +206,11 @@ def promote_changed_company_version(companies_csv: Path, *, company_id: str = "C
         raise ValueError(f"Generated company version for {company_id} has no sector change")
     promoted_at = promoted_at or datetime.now(timezone.utc)
     promoted_at = promoted_at.astimezone(timezone.utc)
-    if promoted_at <= datetime.fromisoformat(baseline["ingested_at"]):
+    if promoted_at.tzinfo is None:
+        promoted_at = promoted_at.replace(tzinfo=timezone.utc)
+    else:
+        promoted_at = promoted_at.astimezone(timezone.utc)
+    if promoted_at <= _parse_utc(baseline["ingested_at"]):
         raise ValueError(f"Promoted timestamp must be later than the baseline for {company_id}")
     changed["ingested_at"] = promoted_at.isoformat()
     temporary_path = path.with_suffix(path.suffix + ".tmp")
@@ -148,7 +218,7 @@ def promote_changed_company_version(companies_csv: Path, *, company_id: str = "C
         with temporary_path.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.DictWriter(stream, fieldnames=fieldnames)
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows(normalize_integer_columns("companies", row) for row in rows)
         temporary_path.replace(path)
     finally:
         temporary_path.unlink(missing_ok=True)

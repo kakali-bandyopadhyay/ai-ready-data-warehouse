@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from generator.generate import generate, promote_changed_company_version
+from generator.generate import baseline_company_seed, generate, promote_changed_company_version
 
 
 @pytest.mark.parametrize("seed", [0, 1, 42, 20261027])
@@ -55,6 +55,7 @@ def test_includes_changed_company_version(tmp_path: Path) -> None:
         rows = [row for row in csv.DictReader(handle) if row["company_id"] == "C0001"]
     assert len(rows) == 2
     assert len({row["sector"] for row in rows}) == 2
+    assert all(row["ingested_at"].endswith("+00:00") for row in rows)
 
 
 def test_changed_company_version_is_future_dated_and_promotable(tmp_path: Path) -> None:
@@ -74,4 +75,21 @@ def test_changed_company_version_is_future_dated_and_promotable(tmp_path: Path) 
     promoted = max(promoted_rows, key=lambda row: row["ingested_at"])
     assert promoted["sector"] == "business_services"
     assert datetime.fromisoformat(promoted["ingested_at"]) == promoted_at
+    assert promoted["employee_count"].isdigit()
+    assert promoted["annual_revenue"].isdigit()
+    assert ".0" not in promoted["employee_count"]
+    assert ".0" not in promoted["annual_revenue"]
+
+
+def test_initial_company_seed_withholds_future_change_then_restores_source(tmp_path: Path) -> None:
+    generate(tmp_path, days=1, companies_count=8,
+             as_of=datetime.now(timezone.utc).date())
+    path = tmp_path / "companies.csv"
+    original = path.read_bytes()
+    with baseline_company_seed(path):
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.DictReader(stream))
+        assert len(rows) == 8
+        assert sum(row["company_id"] == "C0001" for row in rows) == 1
+    assert path.read_bytes() == original
 

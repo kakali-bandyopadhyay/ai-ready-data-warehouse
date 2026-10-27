@@ -1,0 +1,96 @@
+version: 2
+seeds:
+  - name: funds
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        fund_id: STRING
+        fund_name: STRING
+        base_currency: STRING
+        vintage_year: INT
+        fund_nav: DECIMAL(18,2)
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ
+  - name: companies
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        company_id: STRING
+        company_name: STRING
+        sector: STRING
+        country_code: STRING
+        parent_group_id: STRING
+        employee_count: INT
+        annual_revenue: DECIMAL(18,2)
+        classification: STRING
+        owner: STRING
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ
+  - name: holdings
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        holding_id: STRING
+        fund_id: STRING
+        company_id: STRING
+        as_of_date: DATE
+        units: DECIMAL(18,4)
+        price: DECIMAL(18,4)
+        market_value: DECIMAL(18,2)
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ
+  - name: transactions
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        transaction_id: STRING
+        fund_id: STRING
+        company_id: STRING
+        transaction_date: DATE
+        transaction_type: STRING
+        amount: DECIMAL(18,2)
+        currency: STRING
+        ingested_at: TIMESTAMP_NTZ
+        batch_id: STRING
+        loaded_at: TIMESTAMP_NTZ
+  - name: valuations
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        valuation_id: STRING
+        company_id: STRING
+        valuation_date: DATE
+        enterprise_value: DECIMAL(18,2)
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ
+  - name: company_kpis
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        kpi_id: STRING
+        company_id: STRING
+        as_of_date: DATE
+        revenue_growth_pct: DECIMAL(8,4)
+        ebitda_margin_pct: DECIMAL(8,4)
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ
+  - name: company_notes
+    config:
+      schema: ai_ready_demo_raw
+      quote_columns: false
+      column_types:
+        note_id: STRING
+        company_id: STRING
+        note_text: STRING
+        source_name: STRING
+        as_of_date: DATE
+        owner: STRING
+        classification: STRING
+        ingested_at: TIMESTAMP_NTZ
+        loaded_at: TIMESTAMP_NTZ

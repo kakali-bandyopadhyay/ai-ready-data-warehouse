@@ -5,6 +5,18 @@ ai_ready_data_warehouse:
       type: snowflake
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
       user: "{{ env_var('SNOWFLAKE_USER', '') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', '') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'AI_READY_XS_WH') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'AI_READY_DEMO') }}"
+      schema: ANALYTICS
+      threads: 4
+      client_session_keep_alive: false
+    snowflake_password:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', '') }}"
       password: "{{ env_var('SNOWFLAKE_PASSWORD', '') }}"
       role: "{{ env_var('SNOWFLAKE_ROLE', '') }}"
       warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'AI_READY_XS_WH') }}"

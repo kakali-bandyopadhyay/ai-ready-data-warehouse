@@ -29,15 +29,17 @@ def _confirmation(target: str) -> bool:
 
 
 def teardown_snowflake() -> None:
+    """Drop demo resources through the shared key-pair-first connector."""
     if os.getenv("SNOWFLAKE_DATABASE", SNOWFLAKE_DATABASE).upper() != SNOWFLAKE_DATABASE:
         raise ValueError("Teardown is limited to SNOWFLAKE_DATABASE=AI_READY_DEMO")
     if os.getenv("SNOWFLAKE_WAREHOUSE", SNOWFLAKE_WAREHOUSE).upper() != SNOWFLAKE_WAREHOUSE:
         raise ValueError("Teardown is limited to SNOWFLAKE_WAREHOUSE=AI_READY_XS_WH")
     if os.getenv("SNOWFLAKE_ROLE", "").upper() != SNOWFLAKE_ROLE:
         raise ValueError("Set SNOWFLAKE_ROLE=AIRDW_ROLE; Snowflake teardown must run as the demo role")
-    from pipeline.measure_cloud_run import _snowflake_connect
+    from pipeline.measure_cloud_run import _snowflake_connect, snowflake_profile_target
 
-    connection = _snowflake_connect(include_warehouse=False, include_database=False)
+    connection = _snowflake_connect(include_warehouse=False, include_database=False,
+                                    profile_target=snowflake_profile_target())
     try:
         with connection.cursor() as cursor:
             cursor.execute("SELECT CURRENT_ROLE()")

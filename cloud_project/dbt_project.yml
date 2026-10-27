@@ -8,12 +8,9 @@ snapshot-paths: [snapshots]
 test-paths: [tests]
 macro-paths: [macros]
 docs-paths: [docs]
-target-path: ../target/cloud
 clean-targets: [../target/cloud, dbt_packages]
-seeds:
-  ai_ready_cloud:
-    +schema: ai_ready_demo_raw
-    +quote_columns: false
+on-run-start:
+  - "{{ set_session_timezone_utc() }}"
 models:
   ai_ready_cloud:
     +materialized: view

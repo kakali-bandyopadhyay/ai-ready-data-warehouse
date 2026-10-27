@@ -3,8 +3,10 @@ with typed as (
          company_id::text as company_id, transaction_date::date as transaction_date,
          transaction_type::text as transaction_type, amount::numeric(20,2) as amount,
          currency::text as currency, ingested_at::timestamptz as ingested_at,
-         batch_id::text as batch_id,
-         row_number() over (partition by transaction_id order by ingested_at desc) as row_num
+         batch_id::text as batch_id, loaded_at::timestamptz as loaded_at,
+         row_number() over (
+           partition by transaction_id order by ingested_at desc, loaded_at desc
+         ) as row_num
   from {{ source('raw', 'transactions') }}
 )
 select t.transaction_id, t.fund_id, t.company_id, t.transaction_date,

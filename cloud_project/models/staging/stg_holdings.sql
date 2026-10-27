@@ -3,7 +3,11 @@ with ranked as (
          cast(company_id as string) as company_id, cast(as_of_date as date) as as_of_date,
          cast(units as decimal(20,4)) as units, cast(price as decimal(18,4)) as price,
          cast(market_value as decimal(20,2)) as market_value, cast(ingested_at as timestamp) as ingested_at,
-         row_number() over (partition by holding_id order by cast(ingested_at as timestamp) desc) as row_num
+         cast(loaded_at as timestamp) as loaded_at,
+         row_number() over (
+           partition by holding_id order by cast(ingested_at as timestamp) desc,
+             cast(loaded_at as timestamp) desc
+         ) as row_num
   from {{ source('raw', 'holdings') }}
 )
 select h.holding_id, h.fund_id, h.company_id, h.as_of_date, h.units, h.price, h.market_value, h.ingested_at

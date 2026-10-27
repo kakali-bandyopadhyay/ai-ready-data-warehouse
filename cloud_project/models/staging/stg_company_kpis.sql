@@ -4,9 +4,11 @@ with ranked as (
          cast(as_of_date as date) as as_of_date, cast(revenue_growth_pct as decimal(8,4)) as revenue_growth_pct,
          cast(ebitda_margin_pct as decimal(8,4)) as ebitda_margin_pct,
          cast(ingested_at as timestamp) as ingested_at,
+         cast(loaded_at as timestamp) as loaded_at,
          row_number() over (
            partition by company_id
-           order by cast(as_of_date as date) desc, cast(ingested_at as timestamp) desc, cast(kpi_id as string) desc
+           order by cast(as_of_date as date) desc, cast(ingested_at as timestamp) desc,
+                    cast(loaded_at as timestamp) desc, cast(kpi_id as string) desc
          ) as row_num
   from {{ source('raw', 'company_kpis') }}
 )

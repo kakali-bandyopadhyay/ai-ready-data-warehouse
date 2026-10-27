@@ -4,9 +4,11 @@ with typed as (
          revenue_growth_pct::numeric(8,4) as revenue_growth_pct,
          ebitda_margin_pct::numeric(8,4) as ebitda_margin_pct,
          ingested_at::timestamptz as ingested_at,
+         loaded_at::timestamptz as loaded_at,
          row_number() over (
            partition by company_id
-           order by as_of_date::date desc, ingested_at::timestamptz desc, kpi_id desc
+           order by as_of_date::date desc, ingested_at::timestamptz desc,
+                    loaded_at::timestamptz desc, kpi_id desc
          ) as row_num
   from {{ source('raw', 'company_kpis') }}
 )

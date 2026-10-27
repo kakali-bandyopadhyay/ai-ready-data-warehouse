@@ -3,11 +3,12 @@ sources:
   - name: raw
     schema: raw
     description: Synthetic source extracts produced by generator/generate.py.
-    meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}
-    loaded_at_field: loaded_at
-    freshness:
-      warn_after: {count: 31, period: day}
-      error_after: {count: 90, period: day}
+    config:
+      meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}
+      loaded_at_field: loaded_at
+      freshness:
+        warn_after: {count: 31, period: day}
+        error_after: {count: 90, period: day}
     tables:
       - name: funds
         description: Synthetic fund-level attributes and illustrative NAV.
