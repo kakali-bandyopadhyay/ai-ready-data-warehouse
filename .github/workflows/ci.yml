@@ -63,7 +63,7 @@ jobs:
               -p .github/puppeteer-config.json \
               -i "$diagram" -o "docs/img/$name.png" -b white
           done
-          test "$(find docs/img -maxdepth 1 -name '*.png' | wc -l)" -eq 5
+          for diagram in docs/diagrams/*.mmd; do test -s "docs/img/$(basename "$diagram" .mmd).png" || { echo "Missing or empty PNG for $diagram"; exit 1; }; done
       - name: Upload Phase 1 artifacts
         if: always()
         uses: actions/upload-artifact@v7
