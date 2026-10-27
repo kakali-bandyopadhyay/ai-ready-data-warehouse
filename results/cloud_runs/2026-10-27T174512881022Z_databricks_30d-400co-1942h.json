@@ -1,0 +1,53 @@
+{
+  "data_size": {
+    "companies": 400,
+    "days": 30,
+    "generated_source_rows": {
+      "companies": 401,
+      "company_kpis": 400,
+      "company_notes": 401,
+      "funds": 8,
+      "holdings": 1942,
+      "transactions": 800,
+      "valuations": 2000
+    },
+    "label": "synthetic; 30 days; 400 companies; 1942 generated holdings rows",
+    "loaded_source_rows": {
+      "companies": 401,
+      "company_kpis": 400,
+      "company_notes": 401,
+      "funds": 8,
+      "holdings": 1942,
+      "transactions": 800,
+      "valuations": 2000
+    }
+  },
+  "mart_and_ai_ready_row_counts": {
+    "ai_ready_demo_ai_ready.ai_company_profile": 400,
+    "ai_ready_demo_ai_ready.ai_text_chunks": 400,
+    "ai_ready_demo_marts.dim_company": 401,
+    "ai_ready_demo_marts.dim_date": 30,
+    "ai_ready_demo_marts.dim_fund": 8,
+    "ai_ready_demo_marts.fct_holdings_daily": 1940,
+    "ai_ready_demo_marts.fct_transactions": 800
+  },
+  "measured_at_utc": "2026-10-27T17:45:12.881022+00:00",
+  "platform_usage": {
+    "databricks_dbus": null,
+    "measurement_window_end_utc": "2026-10-27T17:44:58.616334+00:00",
+    "measurement_window_start_utc": "2026-10-27T17:35:01.520894+00:00",
+    "snowflake_credits": null,
+    "snowflake_credits_note": null,
+    "status": "no visible billing rows; system usage can be delayed"
+  },
+  "results_status": "measured locally by the user; synthetic data only",
+  "synthetic_data": true,
+  "target": "databricks",
+  "timings_seconds": {
+    "build": 393.501,
+    "generation": 0.255,
+    "load": 137.949,
+    "snapshot": null,
+    "snapshot_note": "Included in dbt build DAG order"
+  }
+}

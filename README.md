@@ -67,7 +67,9 @@ The dbt project contains raw seeds, typed/deduplicated staging models, enriched 
 
 ## Cloud platforms (Phase 2)
 
-Separate cloud dbt project targets and runbooks are provided for Snowflake and Databricks. They share the synthetic source generator and expose platform-specific storage and clustering choices. Snowflake has a measured run; Databricks results are pending. See [FINDINGS.md](FINDINGS.md) for the recorded Snowflake measurements.
+Separate cloud dbt project targets and runbooks are provided for Snowflake and Databricks. They share the synthetic source generator and expose platform-specific storage and clustering choices. Snowflake and Databricks have measured runs. See [FINDINGS.md](FINDINGS.md) for the cross-platform results.
+
+Databricks run: completed 27 Oct 2026, 17:35–17:45 UTC (30 days, 400 companies, 1,942 holdings rows); SCD2 and idempotency passed; DBUs not captured.
 
 For Snowflake, use an XS warehouse with 60-second auto-suspend, the internal stage + `PUT`/`COPY INTO` loader, and the holdings-fact clustering key. A resource monitor and account budget alert provide cost guardrails. Start with the 30-day/400-company sample; scale only after reviewing the measured result. See [Snowflake setup, build, and teardown](docs/runbooks/SNOWFLAKE.md).
 

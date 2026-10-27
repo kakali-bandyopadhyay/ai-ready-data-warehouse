@@ -22,8 +22,27 @@
   whole session including debugging. Snowflake meters per warehouse-hour, so one run
   cannot be isolated exactly.
 
-## Databricks run
-- Pending.
+## Databricks run — 27 Oct 2026, 17:35–17:45 UTC (synthetic: 30 days, 400 companies, 1,942 holdings rows)
+- Databricks Free Edition: serverless SQL warehouse (2X-Small, the only size Free Edition
+  allows), Unity Catalog catalog `workspace`, Delta tables, personal access token auth.
+- Timings: load 137.9 s; dbt builds 393.5 s; end-to-end window 9 min 57 s (includes
+  serverless warehouse start-up).
+- Row counts identical to the Snowflake and local PostgreSQL runs: raw companies 401 → 400
+  after latest-wins dedup; holdings 1,942 → 1,940; dim_company 401 (400 current + 1 SCD2
+  history row); fct_transactions 800; ai_text_chunks 400.
+- SCD2 (C0001 exactly 2 versions, 1 current) and idempotency checks passed.
+- DBUs: not captured — no billing rows were visible to the run; Free Edition billing
+  visibility is limited and usage can be delayed.
+
+## Cross-platform summary (same synthetic data, same dbt models)
+| Platform | Tier used | Load | Builds | Outcome |
+|---|---|---|---|---|
+| PostgreSQL 16 + pgvector | Local Docker | — | 3 builds, ERROR=0 | SCD2 + idempotency pass; 88 tests; CI green |
+| Snowflake | Trial, X-Small, auto-suspend 60 s | 18.5 s | 71.1 s | Pass; 0.133 credits (hour upper bound) |
+| Databricks | Free Edition, serverless 2X-Small | 137.9 s | 393.5 s | Pass; DBUs not visible |
+
+Timings reflect the tiers used (a trial X-Small warehouse vs a Free Edition 2X-Small
+serverless warehouse including start-up) and are not a like-for-like platform benchmark.
 
 ## Issues found during verification (and fixes)
 | Issue | Fix |
