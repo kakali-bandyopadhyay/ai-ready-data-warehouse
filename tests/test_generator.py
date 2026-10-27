@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import csv
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from generator.generate import generate
+from generator.generate import generate, promote_changed_company_version
 
 
 @pytest.mark.parametrize("seed", [0, 1, 42, 20261027])
@@ -55,4 +55,23 @@ def test_includes_changed_company_version(tmp_path: Path) -> None:
         rows = [row for row in csv.DictReader(handle) if row["company_id"] == "C0001"]
     assert len(rows) == 2
     assert len({row["sector"] for row in rows}) == 2
+
+
+def test_changed_company_version_is_future_dated_and_promotable(tmp_path: Path) -> None:
+    as_of = date(2030, 4, 12)
+    generate(tmp_path, days=1, companies_count=8, as_of=as_of)
+    path = tmp_path / "companies.csv"
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = [row for row in csv.DictReader(stream) if row["company_id"] == "C0001"]
+    changed = max(rows, key=lambda row: row["ingested_at"])
+    assert datetime.fromisoformat(changed["ingested_at"]).date() == date(2030, 4, 13)
+    promoted_at = datetime(2030, 4, 13, 12, tzinfo=timezone.utc)
+
+    promote_changed_company_version(path, promoted_at=promoted_at)
+
+    with path.open(newline="", encoding="utf-8") as stream:
+        promoted_rows = [row for row in csv.DictReader(stream) if row["company_id"] == "C0001"]
+    promoted = max(promoted_rows, key=lambda row: row["ingested_at"])
+    assert promoted["sector"] == "business_services"
+    assert datetime.fromisoformat(promoted["ingested_at"]) == promoted_at
 

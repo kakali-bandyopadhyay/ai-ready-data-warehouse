@@ -6,6 +6,7 @@
   )
 }}
 select company_id, company_name, sector, country_code, parent_group_id,
-       employee_count, annual_revenue, classification, owner, ingested_at
+       employee_count, annual_revenue, classification, owner,
+       ingested_at::timestamp without time zone as ingested_at
 from {{ ref('stg_companies') }}
 {% endsnapshot %}

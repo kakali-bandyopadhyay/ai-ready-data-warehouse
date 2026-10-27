@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: ai-ready-data-warehouse
+Version: 0.1.0
+Summary: Synthetic private-markets warehouse with an AI-ready retrieval layer
+Requires-Python: <3.13,>=3.12

@@ -1,4 +1,5 @@
 {{ config(materialized='incremental', incremental_strategy='merge', unique_key='transaction_id',
+          indexes=[{'columns': ['transaction_id'], 'unique': true}],
           on_schema_change='fail', contract={'enforced': true}) }}
 select t.transaction_id::text as transaction_id, t.fund_id::text as fund_id,
        c.company_sk::text as company_sk,

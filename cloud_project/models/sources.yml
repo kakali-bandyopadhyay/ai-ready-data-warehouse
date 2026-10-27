@@ -1,0 +1,18 @@
+version: 2
+sources:
+  - name: raw
+    schema: ai_ready_demo_raw
+    description: Synthetic source data loaded from generated CSV files.
+    loaded_at_field: ingested_at
+    freshness:
+      warn_after: {count: 31, period: day}
+      error_after: {count: 90, period: day}
+    meta: {owner: data_platform, classification: synthetic_public, ai_readiness: false}
+    tables:
+      - name: funds
+      - name: companies
+      - name: holdings
+      - name: transactions
+      - name: valuations
+      - name: company_kpis
+      - name: company_notes

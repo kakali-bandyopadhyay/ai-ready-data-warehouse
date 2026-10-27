@@ -11,7 +11,7 @@ def test_tracked_content_uses_only_firm_neutral_terms() -> None:
               "delo" + "itte", "p" + "wc", "inter" + "view"]
     pattern = "(?i)(?:" + "|".join(r"\b" + re.escape(term) + r"\b" for term in tokens) + ")"
     forbidden = re.compile(pattern)
-    excluded = {".git", "_brief", ".venv", "target", "dbt_packages", "logs", "data"}
+    excluded = {".git", "_brief", ".venv", ".venv-cloud", "target", "dbt_packages", "logs", "data"}
     offenders = []
     for path in root.rglob("*"):
         if not path.is_file() or any(part in excluded for part in path.parts):

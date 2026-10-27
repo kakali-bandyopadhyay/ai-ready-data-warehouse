@@ -1,0 +1,8 @@
+# Separate cloud environment. Keep all adapters on their compatible dbt 1.12 set.
+# dbt-databricks 1.12.8 requires dbt-core >=1.11.2,<1.12.6; 1.12.5 is the newest compatible supported patch.
+dbt-core==1.12.5
+dbt-postgres==1.11.0
+dbt-snowflake==1.12.4
+dbt-databricks==1.12.8
+psycopg[binary]==3.2.13
+pytest==8.3.4

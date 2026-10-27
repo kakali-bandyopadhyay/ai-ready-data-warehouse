@@ -1,5 +1,6 @@
 _brief/
 .venv/
+.venv-cloud/
 __pycache__/
 .pytest_cache/
 target/
@@ -9,3 +10,4 @@ data/generated/
 .env
 profiles.yml
 *.py[cod]
+/cloud_project/seeds/*.csv

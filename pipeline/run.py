@@ -1,4 +1,4 @@
-"""Idempotent local orchestration: generate -> seed -> snapshot -> build -> docs -> embeddings."""
+"""Local orchestration: generate -> seed -> build snapshot -> reload changed seed -> verify idempotency."""
 from __future__ import annotations
 
 import argparse
@@ -12,6 +12,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    # Also support `python pipeline/run.py` from a clean checkout, where Python
+    # otherwise puts only the pipeline/ directory at the front of sys.path.
+    sys.path.insert(0, str(ROOT))
 
 
 def create_profile(directory: Path, target: str) -> Path:
@@ -24,7 +28,7 @@ def create_profile(directory: Path, target: str) -> Path:
         raise ValueError("Set POSTGRES_PASSWORD in the environment before creating a dbt profile")
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
-    content = f'''ai_ready_data_warehouse:\n  target: {target}\n  outputs:\n    {target}:\n      type: postgres\n      host: {json.dumps(host)}\n      user: {json.dumps(user)}\n      password: {json.dumps(password)}\n      port: {port}\n      dbname: {json.dumps(db)}\n      schema: warehouse\n      threads: 4\n      connect_timeout: 10\n'''
+    content = f'''ai_ready_data_warehouse:\n  target: {target}\n  outputs:\n    {target}:\n      type: postgres\n      host: {json.dumps(host)}\n      user: {json.dumps(user)}\n      password: {json.dumps(password)}\n      port: {port}\n      dbname: {json.dumps(db)}\n      schema: warehouse\n      threads: 1\n      connect_timeout: 10\n'''
     path = directory / "profiles.yml"
     path.write_text(content, encoding="utf-8")
     return path
@@ -33,6 +37,13 @@ def create_profile(directory: Path, target: str) -> Path:
 def run_command(args: list[str], *, env: dict[str, str] | None = None, cwd: Path = ROOT) -> None:
     print("+", " ".join(args), flush=True)
     subprocess.run(args, cwd=cwd, env=env, check=True)
+
+
+def build_dbt_command(command: str, profile_dir: Path, target: str, *args: str,
+                      executable: str = "dbt") -> list[str]:
+    """Build a dbt argv list with the command chain before its global options."""
+    return [executable, *command.split(), "--project-dir", str(ROOT), "--profiles-dir", str(profile_dir),
+            "--target", target, *args]
 
 
 def mart_fingerprints() -> dict[str, tuple[int, str]]:
@@ -59,6 +70,30 @@ def mart_fingerprints() -> dict[str, tuple[int, str]]:
                 results[table] = (count, checksum)
     conn.close()
     return results
+
+
+def verify_scd2_version(company_id: str = "C0001") -> tuple[int, int]:
+    """Require the generated changed company to have two versions and one current row."""
+    try:
+        import psycopg  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError("Install requirements.txt before running the pipeline") from exc
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError("Set POSTGRES_PASSWORD in the environment before connecting to PostgreSQL")
+    with psycopg.connect(
+        host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
+        dbname=os.getenv("POSTGRES_DB", "warehouse"), user=os.getenv("POSTGRES_USER", "warehouse"),
+        password=password,
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""select count(*), count(*) filter (where dbt_valid_to is null)
+                           from snapshots.company_history where company_id = %s""", (company_id,))
+            versions, current_versions = cur.fetchone()
+    if versions < 2 or current_versions != 1:
+        raise RuntimeError(f"SCD2 check failed for {company_id}: versions={versions}, current={current_versions}")
+    print(f"SCD2 version check passed: {company_id} versions={versions}, current={current_versions}")
+    return int(versions), int(current_versions)
 
 
 def wait_for_postgres(timeout_seconds: int = 60) -> None:
@@ -91,8 +126,9 @@ def run_pipeline(*, target: str = "postgres", days: int = 30, companies: int = 4
                  dbt_executable: str = "dbt") -> None:
     if target != "postgres":
         raise ValueError("Phase 1 supports only --target postgres")
-    from generator.generate import generate
-    generate(ROOT / "data" / "generated", seed=seed, days=days, companies_count=companies)
+    from generator.generate import generate, promote_changed_company_version
+    data_dir = ROOT / "data" / "generated"
+    generate(data_dir, seed=seed, days=days, companies_count=companies)
     # The profile lives in the OS temp directory, never under the repository.
     profile_dir = Path(tempfile.mkdtemp(prefix="ai-ready-dbt-profile-"))
     try:
@@ -100,18 +136,37 @@ def run_pipeline(*, target: str = "postgres", days: int = 30, companies: int = 4
         wait_for_postgres()
         env = os.environ.copy()
         env["DBT_PROFILES_DIR"] = str(profile_dir)
-        common = [dbt_executable, "--project-dir", str(ROOT), "--profiles-dir", str(profile_dir), "--target", target]
-        run_command(common + ["seed", "--full-refresh"], env=env)
-        run_command(common + ["source", "freshness"], env=env)
-        run_command(common + ["snapshot"], env=env)
-        run_command(common + ["build"], env=env)
+        # Raw relations are declared as sources, so their freshness metadata
+        # does not create DAG edges from the dbt seed resources. Load them first.
+        run_command(build_dbt_command("seed", profile_dir, target, "--full-refresh",
+                                      executable=dbt_executable), env=env)
+        run_command(build_dbt_command("source freshness", profile_dir, target,
+                                      executable=dbt_executable), env=env)
+        # Keep seeds out of every build: sources are not seed dependencies, and
+        # the explicit initial load ensures staging has raw relations to read.
+        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+                                      executable=dbt_executable), env=env)
+        # Expose the generated attribute change and reload raw seeds.
+        # Reload only the changed seed without full refresh. dbt truncates and
+        # inserts changed seed contents, retaining dependent views. The build
+        # below rebuilds staging and advances the snapshot in DAG order.
+        promote_changed_company_version(data_dir / "companies.csv")
+        run_command(build_dbt_command("seed", profile_dir, target, "--select", "companies",
+                                      executable=dbt_executable), env=env)
+        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+                                      executable=dbt_executable), env=env)
+        verify_scd2_version()
         first_result = mart_fingerprints()
-        run_command(common + ["build"], env=env)
+        # Compare the settled SCD2 build with one more build for idempotency.
+        run_command(build_dbt_command("build", profile_dir, target, "--exclude", "resource_type:seed",
+                                      executable=dbt_executable), env=env)
         second_result = mart_fingerprints()
         if first_result != second_result:
             raise RuntimeError(f"Idempotency check failed; first={first_result}, second={second_result}")
-        print(f"Idempotency check passed: {first_result}")
-        run_command(common + ["docs", "generate"], env=env)
+        table_names = ", ".join(first_result)
+        print(f"Idempotency check passed: {table_names} row counts and checksums identical")
+        run_command(build_dbt_command("docs generate", profile_dir, target,
+                                      executable=dbt_executable), env=env)
         if not skip_embeddings:
             from pipeline.vector_search import populate_embeddings
             n = populate_embeddings(embeddings)

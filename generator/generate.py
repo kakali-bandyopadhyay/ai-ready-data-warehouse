@@ -36,7 +36,7 @@ def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
     rng = random.Random(seed)
     as_of = as_of or datetime.now(timezone.utc).date()
     loaded_at = datetime.combine(as_of, datetime.min.time(), tzinfo=timezone.utc).isoformat()
-    company_baseline = datetime(2026, 10, 27, tzinfo=timezone.utc).isoformat()
+    company_baseline = datetime.combine(as_of, datetime.min.time(), tzinfo=timezone.utc).isoformat()
     out = Path(output_dir)
 
     funds = [{"fund_id": f"F{i:03d}", "fund_name": f"Synthetic Fund {i:02d}",
@@ -52,7 +52,8 @@ def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
                           "annual_revenue": round(5_000_000 + i * 372_000.0, 2),
                           "classification": "synthetic_public", "owner": "data_platform", "ingested_at": company_baseline})
     # Changed attribute is supplied as a later source version for snapshot/SCD2 checks.
-    changed = dict(companies[0]); changed["sector"] = "business_services"; changed["ingested_at"] = datetime(2026, 10, 28, tzinfo=timezone.utc).isoformat()
+    changed = dict(companies[0]); changed["sector"] = "business_services"
+    changed["ingested_at"] = datetime.combine(as_of + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).isoformat()
     company_source = companies + [changed]
 
     dates = [as_of - timedelta(days=x) for x in range(days - 1, -1, -1)]
@@ -118,6 +119,39 @@ def generate(output_dir: Path, *, seed: int = 20261027, days: int = 30,
             row["loaded_at"] = loaded_at
         _write_csv(out / f"{name}.csv", rows)
     return {name: len(rows) for name, rows in records.items()}
+
+
+def promote_changed_company_version(companies_csv: Path, *, company_id: str = "C0001",
+                                    promoted_at: datetime | None = None) -> None:
+    """Make the generated future-dated company change visible to the next load."""
+    path = Path(companies_csv)
+    with path.open("r", newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    if not fieldnames or "company_id" not in fieldnames or "ingested_at" not in fieldnames:
+        raise ValueError(f"{path} is not a generated companies CSV")
+    versions = [row for row in rows if row["company_id"] == company_id]
+    if len(versions) < 2:
+        raise ValueError(f"Expected a baseline and changed version for {company_id} in {path}")
+    baseline = min(versions, key=lambda row: row["ingested_at"])
+    changed = max(versions, key=lambda row: row["ingested_at"])
+    if baseline["sector"] == changed["sector"]:
+        raise ValueError(f"Generated company version for {company_id} has no sector change")
+    promoted_at = promoted_at or datetime.now(timezone.utc)
+    promoted_at = promoted_at.astimezone(timezone.utc)
+    if promoted_at <= datetime.fromisoformat(baseline["ingested_at"]):
+        raise ValueError(f"Promoted timestamp must be later than the baseline for {company_id}")
+    changed["ingested_at"] = promoted_at.isoformat()
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with temporary_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def main(argv: Iterable[str] | None = None) -> int:

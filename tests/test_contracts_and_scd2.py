@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from uuid import uuid4
 
 import pytest
 
@@ -23,6 +24,25 @@ def test_incremental_marts_use_merge_and_unique_key(fact: str, lookback: str) ->
     assert "incremental_strategy='merge'" in sql
     assert "unique_key=" in sql
     assert lookback in sql
+    if fact == "fct_transactions":
+        assert "indexes=[{'columns': ['transaction_id'], 'unique': true}]" in sql
+
+
+def test_snapshot_updated_at_matches_postgres_snapshot_timestamp_type() -> None:
+    sql = (ROOT / "snapshots" / "company_history.sql").read_text(encoding="utf-8")
+    assert "ingested_at::timestamp without time zone as ingested_at" in sql
+
+
+def test_company_profile_avoids_nested_company_staging_views() -> None:
+    profile = (ROOT / "models" / "ai_ready" / "ai_company_profile.sql").read_text(encoding="utf-8")
+    kpis = (ROOT / "models" / "staging" / "stg_company_kpis.sql").read_text(encoding="utf-8")
+    assert "ref('company_history')" in profile
+    assert "c.dbt_valid_to is null" in profile
+    assert "on c.company_id = k.company_id" in profile
+    assert "ref('stg_companies')" not in profile
+    assert "config(materialized='table')" in kpis
+    assert "partition by company_id" in kpis
+    assert "ref('stg_companies')" not in kpis
 
 
 def test_late_arrival_is_retained_by_ingestion_lookback() -> None:
@@ -81,8 +101,8 @@ def test_scd2_snapshot_persists_changed_company_version() -> None:
 
     with tempfile.TemporaryDirectory(prefix="ai-ready-scd2-test-") as profile_dir:
         create_profile(Path(profile_dir), "postgres")
-        subprocess.run(["dbt", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
-                        "--target", "postgres", "snapshot"], cwd=ROOT, check=True)
+        subprocess.run(["dbt", "snapshot", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
+                        "--target", "postgres"], cwd=ROOT, check=True)
 
     with psycopg.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
@@ -103,27 +123,53 @@ def test_late_business_date_is_loaded_by_ingestion_time_lookback() -> None:
     from pipeline.run import ROOT, create_profile
 
     password = os.environ["POSTGRES_PASSWORD"]
+    transaction_id = f"T_LATE_TEST_{uuid4().hex}"
+    ingested_at = datetime.now(timezone.utc)
     connect = dict(host=os.getenv("POSTGRES_HOST", "localhost"), port=int(os.getenv("POSTGRES_PORT", "5432")),
                    dbname=os.getenv("POSTGRES_DB", "warehouse"), user=os.getenv("POSTGRES_USER", "warehouse"),
                    password=password)
     with psycopg.connect(**connect) as connection:
         with connection.cursor() as cursor:
+            # Anchor the late business date inside the generated date dimension,
+            # rather than to the runner/database wall clock or dbt's fixed seed.
+            cursor.execute("select max(full_date) - 10 from marts.dim_date")
+            late_business_date = cursor.fetchone()[0]
+            assert late_business_date is not None
+            cursor.execute("select count(*) from marts.dim_date where full_date = %s", (late_business_date,))
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("select count(*) from marts.fct_transactions where transaction_id = %s",
+                           (transaction_id,))
+            assert cursor.fetchone()[0] == 0
             cursor.execute("""insert into raw.transactions
                 (transaction_id, fund_id, company_id, transaction_date, transaction_type, amount,
                  currency, ingested_at, batch_id, loaded_at)
-                select 'T_LATE_TEST_CI', 'F001', 'C0001', current_date - interval '10 days',
-                       'follow_on', 123456.78, 'USD', current_timestamp, 'late_test', current_timestamp
-                where not exists (select 1 from raw.transactions where transaction_id = 'T_LATE_TEST_CI')""")
+                values (%s, 'F001', 'C0001', %s, 'follow_on', 123456.78, 'USD', %s,
+                        'late_test', %s)""",
+                           (transaction_id, late_business_date, ingested_at, ingested_at))
 
-    with tempfile.TemporaryDirectory(prefix="ai-ready-late-test-") as profile_dir:
-        create_profile(Path(profile_dir), "postgres")
-        subprocess.run(["dbt", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
-                        "--target", "postgres", "build"], cwd=ROOT, check=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="ai-ready-late-test-") as profile_dir:
+            create_profile(Path(profile_dir), "postgres")
+            # Run only the existing incremental fact. No full refresh and no
+            # seed reload: the inserted raw row must arrive through the merge.
+            dbt_args = ["dbt", "build", "--project-dir", str(ROOT), "--profiles-dir", profile_dir,
+                        "--target", "postgres", "--select", "fct_transactions",
+                        "--exclude", "resource_type:seed"]
+            assert "--full-refresh" not in dbt_args
+            subprocess.run(dbt_args, cwd=ROOT, check=True)
 
-    with psycopg.connect(**connect) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("select count(*) from marts.fct_transactions where transaction_id = 'T_LATE_TEST_CI' and amount = 123456.78")
-            assert cursor.fetchone()[0] == 1
+        with psycopg.connect(**connect) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""select count(*) from marts.fct_transactions
+                                  where transaction_id = %s and amount = 123456.78
+                                    and ingested_at = %s""", (transaction_id, ingested_at))
+                assert cursor.fetchone()[0] == 1
+    finally:
+        # Keep this integration check isolated from later builds/reruns.
+        with psycopg.connect(**connect) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("delete from marts.fct_transactions where transaction_id = %s", (transaction_id,))
+                cursor.execute("delete from raw.transactions where transaction_id = %s", (transaction_id,))
 
 
 def test_contract_manifest_covers_required_fact_relationships() -> None:

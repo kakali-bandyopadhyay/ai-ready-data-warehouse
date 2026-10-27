@@ -1,0 +1,41 @@
+name: ai_ready_cloud
+version: 1.0.0
+config-version: 2
+profile: ai_ready_data_warehouse
+model-paths: [models]
+seed-paths: [seeds]
+snapshot-paths: [snapshots]
+test-paths: [tests]
+macro-paths: [macros]
+docs-paths: [docs]
+target-path: ../target/cloud
+clean-targets: [../target/cloud, dbt_packages]
+seeds:
+  ai_ready_cloud:
+    +schema: ai_ready_demo_raw
+    +quote_columns: false
+models:
+  ai_ready_cloud:
+    +materialized: view
+    +persist_docs:
+      relation: true
+      columns: true
+    +meta:
+      owner: data_platform
+      classification: synthetic_public
+      ai_readiness: false
+    staging:
+      +schema: ai_ready_demo_staging
+    intermediate:
+      +schema: ai_ready_demo_intermediate
+    marts:
+      +schema: ai_ready_demo_marts
+    ai_ready:
+      +schema: ai_ready_demo_ai_ready
+      +meta:
+        ai_readiness: true
+snapshots:
+  ai_ready_cloud:
+    +target_schema: ai_ready_demo_snapshots
+    +strategy: timestamp
+    +updated_at: ingested_at

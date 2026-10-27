@@ -1,0 +1,102 @@
+version: 2
+models:
+  - name: stg_funds
+    description: Synthetic funds with typed values.
+    columns:
+      - name: fund_id
+        description: Synthetic fund key.
+        data_tests: [not_null, unique]
+      - name: fund_nav
+        description: Illustrative synthetic fund NAV.
+  - name: stg_companies
+    description: Latest-arrived synthetic company attributes used by the snapshot.
+    columns:
+      - name: company_id
+        description: Synthetic company natural key.
+        data_tests: [not_null, unique]
+      - name: parent_group_id
+        description: Synthetic parent-group key.
+  - name: stg_holdings
+    description: Deduplicated daily holdings with orphan references removed.
+    columns:
+      - name: holding_id
+        data_tests: [not_null, unique]
+  - name: stg_transactions
+    description: Synthetic transactions with ingestion timestamps for late arrival.
+    columns:
+      - name: transaction_id
+        data_tests: [not_null, unique]
+      - name: transaction_type
+        data_tests:
+          - accepted_values:
+              arguments: {values: ['investment', 'realization', 'follow_on']}
+  - name: stg_valuations
+    description: Synthetic dated enterprise-value estimates.
+    data_tests: [no_future_valuations]
+    columns:
+      - name: valuation_id
+        data_tests: [not_null, unique]
+  - name: dim_fund
+    description: Fund dimension for the synthetic cloud warehouse.
+    columns:
+      - name: fund_id
+        data_tests: [not_null, unique]
+  - name: dim_company
+    description: Snapshot-backed SCD Type 2 company dimension including parent group.
+    columns:
+      - name: company_sk
+        data_tests: [not_null, unique]
+      - name: company_id
+        data_tests: [not_null]
+    data_tests: [one_current_company]
+  - name: dim_date
+    description: Date dimension derived from source and fact dates.
+    columns:
+      - name: date_key
+        data_tests: [not_null, unique]
+  - name: fct_holdings_daily
+    description: Daily company positions, merged by holding key and clustered by date/company.
+    columns:
+      - name: holding_id
+        data_tests: [not_null, unique]
+      - name: fund_id
+        data_tests: [relationships: {arguments: {to: ref('dim_fund'), field: fund_id}}]
+      - name: company_sk
+        data_tests: [relationships: {arguments: {to: ref('dim_company'), field: company_sk}}]
+      - name: date_key
+        data_tests: [relationships: {arguments: {to: ref('dim_date'), field: date_key}}]
+    data_tests: [holdings_nav_reconcile]
+  - name: fct_transactions
+    description: Transaction fact merged by stable transaction key.
+    columns:
+      - name: transaction_id
+        data_tests: [not_null, unique]
+      - name: fund_id
+        data_tests: [relationships: {arguments: {to: ref('dim_fund'), field: fund_id}}]
+      - name: company_sk
+        data_tests: [relationships: {arguments: {to: ref('dim_company'), field: company_sk}}]
+      - name: date_key
+        data_tests: [relationships: {arguments: {to: ref('dim_date'), field: date_key}}]
+  - name: ai_company_profile
+    description: PII-free synthetic company profile with lineage.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_readiness: true}}
+    columns:
+      - name: company_id
+        description: Synthetic company key.
+        data_tests: [not_null, unique]
+      - name: lineage
+        description: Source model lineage for the curated profile.
+  - name: ai_text_chunks
+    description: Synthetic text chunks with source metadata and platform-native vector placeholder.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_readiness: true}}
+    columns:
+      - name: chunk_id
+        data_tests: [not_null, unique]
+      - name: source_name
+        description: Synthetic source label.
+      - name: as_of_date
+        description: Synthetic note as-of date.
+      - name: owner
+        description: Data owner metadata.
+      - name: classification
+        description: Synthetic data classification.

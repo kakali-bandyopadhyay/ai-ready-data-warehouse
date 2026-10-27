@@ -16,6 +16,8 @@ flowchart LR
 
 Source: [`end_to_end.mmd`](diagrams/end_to_end.mmd).
 
+![End-to-end flow](img/end_to_end.png)
+
 ## 2. dbt layers
 
 ```mermaid
@@ -27,6 +29,8 @@ flowchart TD
 ```
 
 Source: [`dbt_layers.mmd`](diagrams/dbt_layers.mmd).
+
+![dbt layers](img/dbt_layers.png)
 
 ## 3. Star schema
 
@@ -42,17 +46,26 @@ erDiagram
 
 Source: [`star_schema.mmd`](diagrams/star_schema.mmd).
 
+![Star schema](img/star_schema.png)
+
 ## 4. Incremental facts and SCD Type 2
 
 ```mermaid
 flowchart LR
-  SOURCE[Seeded source rows] --> SNAP[Company timestamp snapshot]
+  SOURCE[Seeded source rows] --> STAGING[Staging models]
+  STAGING --> SNAP[Company timestamp snapshot]
   SNAP --> HIST[Company dimension versions]
-  SOURCE --> FACT[Incremental fact merge]
-  FACT --> CHECK[Repeat build and compare fingerprints]
+  STAGING --> FACT[Incremental fact merge]
+  SNAP --> PROMOTE[Promote changed company version]
+  PROMOTE --> RELOAD[Reload seeds and build again]
+  RELOAD --> CHECK[Verify SCD2, repeat build, compare fingerprints]
 ```
 
-Source: [`incremental_scd2.mmd`](diagrams/incremental_scd2.mmd). Transactions reprocess a 90-day ingestion-time window on each incremental build. A delayed row inside that overlap is merged by its stable transaction key. Company snapshots track `ingested_at`; old versions receive a `dbt_valid_to` and one current version remains open-ended.
+Source: [`incremental_scd2.mmd`](diagrams/incremental_scd2.mmd).
+
+![Incremental facts and SCD Type 2](img/incremental_scd2.png)
+
+Transactions reprocess a 90-day ingestion-time window on each incremental build. A delayed row inside that overlap is merged by its stable transaction key, which has a PostgreSQL unique index for target-side match lookup. Company snapshots track `ingested_at`; the snapshot input casts it to timestamp without time zone to match dbt's PostgreSQL snapshot validity columns. Old versions receive a `dbt_valid_to` and one current version remains open-ended.
 
 ## 5. AI-ready retrieval
 
@@ -66,7 +79,11 @@ flowchart LR
   SEARCH --> RESULTS[Chunks plus provenance]
 ```
 
-Source: [`retrieval_flow.mmd`](diagrams/retrieval_flow.mmd). Default vectors are deterministic test-only pseudo-vectors. They validate plumbing and ranking mechanics, but carry no semantic meaning. Optional API embeddings use the same 8 dimensions and require a user-supplied key.
+Source: [`retrieval_flow.mmd`](diagrams/retrieval_flow.mmd).
+
+![AI-ready retrieval](img/retrieval_flow.png)
+
+Default vectors are deterministic test-only pseudo-vectors. They validate plumbing and ranking mechanics, but carry no semantic meaning. Optional API embeddings use the same 8 dimensions and require a user-supplied key.
 
 ## PostgreSQL layout
 
@@ -83,4 +100,4 @@ Schemas are set by [`generate_schema_name.sql`](../macros/generate_schema_name.s
 
 ## Data-quality controls
 
-The project applies standard dbt uniqueness, null, relationship, and accepted-value tests, source freshness, model contracts on all five marts, a latest-day holdings-to-NAV tolerance check, a no-future-valuations check, and a one-current-company check. The pipeline builds twice and compares deterministic checksums and counts for both facts. The pytest suite exercises generator reproducibility, defects, runner orchestration, model contracts, the SCD2 configuration, the vector query, and the firm-neutral content scan.
+The project is configured with dbt uniqueness, null, relationship, and accepted-value tests, source freshness, model contracts on all five marts, a latest-day holdings-to-NAV tolerance check, a no-future-valuations check, and a one-current-company check. The runner's initial `dbt build` loads seeds and captures the baseline snapshot; it then reloads the promoted company seed without full refresh, runs a seed-excluded build so staging and the second snapshot follow DAG order, and repeats that build to compare deterministic fact checksums and counts. This local end-to-end sequence has completed successfully; its run record is in [`FINDINGS.md`](../FINDINGS.md). The pytest suite includes generator reproducibility, defects, runner orchestration, model contracts, the SCD2 configuration, the vector query, and the firm-neutral content scan.
