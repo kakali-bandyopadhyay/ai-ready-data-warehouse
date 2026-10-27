@@ -1,4 +1,4 @@
-﻿"""Load/build a cloud target and write a dated, synthetic-data measurement record.
+"""Load/build a cloud target and write a dated, synthetic-data measurement record.
 
 Cloud billing tables can be delayed or permission-gated. In that case the JSON
 records null credit/DBU values with an accounting status instead of inventing a
