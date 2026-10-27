@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 foreach ($diagram in $diagrams) {
   $png = Join-Path $outputDir ($diagram.BaseName + ".png")
   Write-Host "Exporting $($diagram.Name) -> $png"
-  & $Npx -y "@mermaid-js/mermaid-cli" -i $diagram.FullName -o $png -b white
+  & $Npx --yes --package "@mermaid-js/mermaid-cli" mmdc -p (Join-Path $repoRoot ".github\puppeteer-config.json") -i $diagram.FullName -o $png -b white
   if ($LASTEXITCODE -ne 0) {
     throw "Mermaid export failed for $($diagram.Name) (exit code $LASTEXITCODE)"
   }

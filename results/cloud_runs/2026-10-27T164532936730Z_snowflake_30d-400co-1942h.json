@@ -37,7 +37,8 @@
     "measurement_window_end_utc": "2026-10-27T16:45:30.607994+00:00",
     "measurement_window_start_utc": "2026-10-27T16:43:41.618216+00:00",
     "snowflake_credits": null,
-    "status": "unavailable (ProgrammingError); check ACCOUNT_USAGE grants and reporting delay"
+    "snowflake_credits_note": "AIRDW_ROLE intentionally has no ACCOUNT_USAGE access; credits are measured separately as ACCOUNTADMIN from SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY; latency up to ~3 h.",
+    "status": "AIRDW_ROLE intentionally has no ACCOUNT_USAGE access; credits are measured separately as ACCOUNTADMIN from SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY; latency up to ~3 h."
   },
   "results_status": "measured locally by the user; synthetic data only",
   "synthetic_data": true,

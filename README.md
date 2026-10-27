@@ -67,13 +67,13 @@ The dbt project contains raw seeds, typed/deduplicated staging models, enriched 
 
 ## Cloud platforms (Phase 2)
 
-Separate cloud dbt project targets and runbooks are provided for Snowflake and Databricks. They share the synthetic source generator and expose platform-specific storage and clustering choices. No cloud build has been run from this environment; results are documented as pending until run with your own accounts.
+Separate cloud dbt project targets and runbooks are provided for Snowflake and Databricks. They share the synthetic source generator and expose platform-specific storage and clustering choices. Snowflake has a measured run; Databricks results are pending. See [FINDINGS.md](FINDINGS.md) for the recorded Snowflake measurements.
 
 For Snowflake, use an XS warehouse with 60-second auto-suspend, the internal stage + `PUT`/`COPY INTO` loader, and the holdings-fact clustering key. A resource monitor and account budget alert provide cost guardrails. Start with the 30-day/400-company sample; scale only after reviewing the measured result. See [Snowflake setup, build, and teardown](docs/runbooks/SNOWFLAKE.md).
 
 For Databricks, use a serverless SQL warehouse at the smallest practical size with auto-stop, Delta tables, and liquid clustering on the holdings fact. Unity Catalog tags are opt-in because they need applicable edition support and `APPLY TAG` permissions. Configure workspace budget alerts before building. See [Databricks setup, build, and teardown](docs/runbooks/DATABRICKS.md).
 
-Cloud credentials are read from environment variables through [profiles.yml.example](profiles.yml.example); copy it to a profile directory outside this repository. `requirements-cloud.txt` holds separate cloud adapter pins so the Postgres CI dependencies remain stable. `python -m pipeline.measure_cloud_run --target snowflake` or `--target databricks` writes a UTC-dated, data-size-labelled JSON record under `results/cloud_runs/`. Cloud costs and row counts are not populated in this checkout. See [cloud findings](FINDINGS.md) and [design decisions](docs/DESIGN_DECISIONS.md).
+Snowflake key-pair authentication uses a `TYPE = SERVICE` user (`AIRDW_DBT`) with `AIRDW_ROLE`. Follow the [Snowflake runbook](docs/runbooks/SNOWFLAKE.md) to create the service user, generate its RSA key with Python `cryptography`, and store the private key outside the repository under `%LOCALAPPDATA%`. Set `SNOWFLAKE_PRIVATE_KEY_PATH` and optionally `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` in PowerShell; keep the session role as `AIRDW_ROLE` and do not set a service-user password. Cloud credentials are read from environment variables through [profiles.yml.example](profiles.yml.example); copy it to a profile directory outside this repository. `requirements-cloud.txt` holds separate cloud adapter pins so Postgres CI dependencies remain stable. `python -m pipeline.measure_cloud_run --target snowflake` or `--target databricks` writes a UTC-dated, data-size-labelled JSON record under `results/cloud_runs/`. See [cloud findings](FINDINGS.md) and [design decisions](docs/DESIGN_DECISIONS.md).
 
 ## Documentation
 

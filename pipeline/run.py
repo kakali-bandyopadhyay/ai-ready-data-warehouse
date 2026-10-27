@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pipeline.dbt_commands import build_dbt_command
+from pipeline.fact_fingerprints import FACT_COLUMNS, FACT_KEYS
 from generator.generate import baseline_company_seed
 
 
@@ -61,10 +62,15 @@ def mart_fingerprints() -> dict[str, tuple[int, str]]:
     results: dict[str, tuple[int, str]] = {}
     with conn:
         with conn.cursor() as cur:
-            for table in ("fct_holdings_daily", "fct_transactions"):
-                cur.execute(f'''select count(*), coalesce(md5(string_agg(md5(to_jsonb(t)::text), '' order by to_jsonb(t)::text)), md5(''))
+            for table, columns in FACT_COLUMNS.items():
+                key = FACT_KEYS[table]
+                column_expr = " || '|' || ".join(f"coalesce(t.{column}::text, '<NULL>')" for column in columns)
+                cur.execute(f'''select count(*), count(distinct t.{key}),
+                                  coalesce(md5(string_agg(md5({column_expr}), '' order by t.{key})), md5(''))
                                 from marts.{table} t''')
-                count, checksum = cur.fetchone()
+                count, unique_keys, checksum = cur.fetchone()
+                if count != unique_keys:
+                    raise RuntimeError(f"Fingerprint key {key} is not unique in marts.{table}")
                 results[table] = (count, checksum)
     conn.close()
     return results

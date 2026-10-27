@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import os
 import re
@@ -29,6 +28,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pipeline.dbt_commands import build_dbt_command
+from pipeline.fact_fingerprints import FACT_COLUMNS, FACT_KEYS
 
 CLOUD_PROJECT = ROOT / "cloud_project"
 TABLES = (
@@ -383,6 +383,30 @@ def _cloud_relation(target: str, schema: str, table: str) -> str:
     return f"{database}.{_identifier(schema)}.{_identifier(table, 'table')}"
 
 
+def _reset_cloud_derived_schemas(target: str) -> None:
+    """Drop/recreate every derived schema written by this run; leave raw intact."""
+    if target not in ("snowflake", "databricks"):
+        raise ValueError("Cloud measurement target must be snowflake or databricks")
+    schemas = (
+        "ai_ready_demo_staging", "ai_ready_demo_intermediate", "ai_ready_demo_marts",
+        "ai_ready_demo_ai_ready", "ai_ready_demo_snapshots",
+    )
+    connection = _cloud_connect(target)
+    try:
+        with connection.cursor() as cursor:
+            for schema in schemas:
+                if target == "snowflake":
+                    database = _identifier(os.getenv("SNOWFLAKE_DATABASE", "AI_READY_DEMO"), "database")
+                else:
+                    database = _identifier(os.getenv("DATABRICKS_CATALOG", ""), "catalog")
+                relation = f"{database}.{_identifier(schema)}"
+                cursor.execute(f"DROP SCHEMA IF EXISTS {relation} CASCADE")
+                cursor.execute(f"CREATE SCHEMA {relation}")
+    finally:
+        connection.close()
+    print(f"Clean-state reset passed: recreated {len(schemas)} derived schemas for {target}")
+
+
 def _verify_cloud_scd2(target: str, company_id: str = "C0001") -> tuple[int, int]:
     if not re.fullmatch(r"C[0-9]+", company_id):
         raise ValueError("Invalid synthetic company ID")
@@ -397,7 +421,7 @@ def _verify_cloud_scd2(target: str, company_id: str = "C0001") -> tuple[int, int
             versions, current = cursor.fetchone()
     finally:
         connection.close()
-    if versions < 2 or current != 1:
+    if versions != 2 or current != 1:
         raise RuntimeError(f"SCD2 check failed for {company_id}: versions={versions}, current={current}")
     print(f"SCD2 version check passed: {company_id} versions={versions}, current={current}")
     return int(versions), int(current)
@@ -518,52 +542,41 @@ def _truncate_databricks_raw_table(table: str) -> None:
 
 
 def _cloud_fact_fingerprints(target: str) -> dict[str, tuple[int, str]]:
-    """Stream stable fact rows into SHA-256 checksums on either cloud target."""
+    """Compute fact counts and deterministic checksums inside the warehouse."""
     connection = _cloud_connect(target)
     fingerprints: dict[str, tuple[int, str]] = {}
-    order_by = {
-        "fct_holdings_daily": "HOLDING_ID",
-        "fct_transactions": "TRANSACTION_ID",
-    }
     try:
         with connection.cursor() as cursor:
-            for table, ordering in order_by.items():
+            for table, columns in FACT_COLUMNS.items():
                 relation = _cloud_relation(target, "ai_ready_demo_marts", table)
-                cursor.execute(f"SELECT COUNT(*) FROM {relation}")
-                count = int(cursor.fetchone()[0])
-                cursor.execute(f"SELECT * FROM {relation} ORDER BY {ordering}")
-                digest = hashlib.sha256()
-                while True:
-                    batch = cursor.fetchmany(2000)
-                    if not batch:
-                        break
-                    for row in batch:
-                        digest.update(json.dumps(row, default=str, separators=(",", ":")).encode("utf-8"))
-                        digest.update(b"\n")
-                fingerprints[table] = (count, digest.hexdigest())
+                key = FACT_KEYS[table]
+                if target == "snowflake":
+                    checksum = "COALESCE(HASH_AGG(*), 0)"
+                else:
+                    values = ", ".join(_identifier(column, "column") for column in columns)
+                    checksum = (
+                        f"COALESCE(SUM(CAST(XXHASH64({values}) AS DECIMAL(38,0))), "
+                        "CAST(0 AS DECIMAL(38,0)))"
+                    )
+                cursor.execute(
+                    f"SELECT COUNT(*), COUNT(DISTINCT {_identifier(key, 'column')}), {checksum} "
+                    f"FROM {relation}"
+                )
+                count, unique_keys, digest = cursor.fetchone()
+                if int(count) != int(unique_keys):
+                    raise RuntimeError(f"Fingerprint key {key} is not unique in {relation}")
+                fingerprints[table] = (int(count), str(digest))
     finally:
         connection.close()
     return fingerprints
 
 
 def _snowflake_credits(start: datetime, end: datetime) -> tuple[float | None, str]:
-    try:
-        # ACCOUNT_USAGE queries need a warehouse. This uses the same XS warehouse
-        # and is outside the recorded build window, so the measurement is explicit.
-        connection = _snowflake_connect()
-        try:
-            warehouse = _identifier(os.getenv("SNOWFLAKE_WAREHOUSE", "AI_READY_XS_WH"), "warehouse")
-            with connection.cursor() as cursor:
-                cursor.execute("""SELECT SUM(CREDITS_USED) FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
-                                WHERE WAREHOUSE_NAME = %s AND START_TIME <= %s AND END_TIME >= %s""",
-                               (warehouse, end, start))
-                value = cursor.fetchone()[0]
-            return (float(value) if value is not None else None,
-                    "available" if value is not None else "no visible metering rows; account usage can be delayed")
-        finally:
-            connection.close()
-    except Exception as exc:
-        return None, f"unavailable ({type(exc).__name__}); check ACCOUNT_USAGE grants and reporting delay"
+    del start, end
+    return None, (
+        "not queried by AIRDW_ROLE (intentionally has no ACCOUNT_USAGE access); measure separately as "
+        "ACCOUNTADMIN from SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY; latency up to ~3 h"
+    )
 
 
 def _databricks_dbus(start: datetime, end: datetime) -> tuple[float | None, str]:
@@ -601,6 +614,8 @@ def run_measurement(*, target: str, days: int, companies: int, seed: int,
         _snowflake_auth_kwargs()
     if target == "databricks" and not os.getenv("DATABRICKS_TOKEN"):
         raise RuntimeError("Set Databricks connection environment variables before running this target")
+
+    _reset_cloud_derived_schemas(target)
 
     from generator.generate import generate, promote_changed_company_version
     dbt_target = snowflake_profile_target() if target == "snowflake" else target
@@ -751,6 +766,11 @@ def build_measurement_record(*, target: str, days: int, companies: int,
             "snowflake_credits": credits,
             "databricks_dbus": dbus,
             "status": billing_status,
+            "snowflake_credits_note": (
+                "AIRDW_ROLE intentionally has no ACCOUNT_USAGE access; measure credits separately as "
+                "ACCOUNTADMIN from SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY; latency up to ~3 h"
+                if target == "snowflake" else None
+            ),
             "measurement_window_start_utc": started_utc.isoformat(),
             "measurement_window_end_utc": build_end_utc.isoformat(),
         },

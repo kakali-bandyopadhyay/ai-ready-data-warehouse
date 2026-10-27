@@ -393,6 +393,105 @@ def test_identifier_guard_rejects_sql_injection() -> None:
         raise AssertionError("unsafe SQL identifier should fail validation")
 
 
+@pytest.mark.parametrize(("target", "expected"), [
+    ("snowflake", "HASH_AGG(*)"),
+    ("databricks", "SUM(CAST(XXHASH64("),
+])
+def test_cloud_fingerprints_are_computed_in_warehouse(monkeypatch, target: str, expected: str) -> None:
+    monkeypatch.setenv("DATABRICKS_CATALOG", "demo")
+    statements: list[str] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, sql: str) -> None:
+            statements.append(sql)
+
+        def fetchone(self):
+            return (4, 4, 987654)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(measure, "_cloud_connect", lambda _target: Connection())
+    actual = measure._cloud_fact_fingerprints(target)
+    assert set(actual) == {"fct_holdings_daily", "fct_transactions"}
+    assert all(item == (4, "987654") for item in actual.values())
+    assert len(statements) == 2
+    assert all(expected in sql for sql in statements)
+    assert all("COUNT(DISTINCT" in sql for sql in statements)
+
+
+@pytest.mark.parametrize(("target", "env_name", "value", "database"), [
+    ("databricks", "DATABRICKS_CATALOG", "demo", "DEMO"),
+    ("snowflake", "SNOWFLAKE_DATABASE", "AI_READY_DEMO", "AI_READY_DEMO"),
+])
+def test_cloud_reset_recreates_only_derived_schemas(monkeypatch, capsys, target, env_name, value, database) -> None:
+    monkeypatch.setenv(env_name, value)
+    statements: list[str] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, sql: str) -> None:
+            statements.append(sql)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(measure, "_cloud_connect", lambda _target: Connection())
+    measure._reset_cloud_derived_schemas(target)
+    assert len(statements) == 10
+    assert all(sql.startswith((f"DROP SCHEMA IF EXISTS {database}.AI_READY_DEMO_",
+                               f"CREATE SCHEMA {database}.AI_READY_DEMO_"))
+               for sql in statements)
+    assert all("raw" not in sql.lower() for sql in statements)
+    assert f"Clean-state reset passed: recreated 5 derived schemas for {target}" in capsys.readouterr().out
+
+
+def test_cloud_scd2_rejects_more_than_two_versions(monkeypatch) -> None:
+    monkeypatch.setenv("DATABRICKS_CATALOG", "demo")
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, _sql: str) -> None:
+            return None
+
+        def fetchone(self):
+            return (3, 1)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(measure, "_cloud_connect", lambda _target: Connection())
+    with pytest.raises(RuntimeError, match="versions=3, current=1"):
+        measure._verify_cloud_scd2("databricks")
+
+
 def test_cloud_measurement_runs_load_build_scd2_and_idempotency_in_order(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
@@ -435,6 +534,8 @@ def test_cloud_measurement_runs_load_build_scd2_and_idempotency_in_order(
         events.append("dbt:" + " ".join([command, *args]))
 
     monkeypatch.setattr(measure, "_dbt_command", dbt)
+    monkeypatch.setattr(measure, "_reset_cloud_derived_schemas",
+                        lambda target: events.append("reset:" + target))
     monkeypatch.setattr(measure, "_validate_raw_schema",
                         lambda target, tables=measure.SNOWFLAKE_TABLES: events.append(
                             "validate:" + (",".join(tables) if tables != measure.SNOWFLAKE_TABLES else "all")))
@@ -472,7 +573,7 @@ def test_cloud_measurement_runs_load_build_scd2_and_idempotency_in_order(
     assert "SCD2 version check passed: C0001 versions=2, current=1" in output
     assert "Idempotency check passed: fct_holdings_daily, fct_transactions row counts and checksums identical" in output
     assert events == [
-        "generate", "load:" + ",".join(measure.SNOWFLAKE_TABLES) + ":baseline",
+        "reset:databricks", "generate", "load:" + ",".join(measure.SNOWFLAKE_TABLES) + ":baseline",
         "dbt:seed --full-refresh", "validate:all", "dbt:source freshness",
         "dbt:build --exclude resource_type:seed", "snapshot_baseline", "ensure_changed_attribute",
         "promote_company_change",

@@ -97,7 +97,20 @@ The smoke run is intentionally small. After verifying the first result and cost 
 python -m pipeline.measure_cloud_run --target snowflake --days 730 --companies 20000
 ```
 
-The measurement script creates each raw table with declared `VARCHAR`, `NUMBER`, `DATE`, and `TIMESTAMP_NTZ` columns before `COPY INTO`. It validates all seven raw table schemas immediately after the load and again after reloading the changed company table. A mismatch stops the run with a `Raw schema validation failed` message before source freshness or dbt builds. For the SCD2 reload, it truncates `AI_READY_DEMO_RAW.COMPANIES`, then PUTs the company CSV under a fresh UUID filename and copies that staged object into the table. This avoids Snowflake load-history deduplication. The script promotes C0001's changed row to a timestamp newer than the captured baseline, then asserts the raw row's sector and timestamp changed before starting build 2. It checks source freshness and runs three `dbt build --exclude resource_type:seed` passes. The first captures baseline history; build 2 captures the changed version and verifies two SCD2 versions; it fingerprints both fact tables, builds once more, and compares row counts/checksums for idempotency. It then records row counts and timings in `results/cloud_runs/<UTC timestamp>_snowflake_<data size>.json`, and queries `SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY` for credits. Snowflake account metering can lag; the result records `null` and a status if rows are not yet visible or the role cannot query it. Re-run the measurement query later if needed; preserve each dated result file. Snapshot work runs in DAG order inside each build; it is not a separate `dbt snapshot` step.
+The measurement script creates each raw table with declared `VARCHAR`, `NUMBER`, `DATE`, and `TIMESTAMP_NTZ` columns before `COPY INTO`. It validates all seven raw table schemas immediately after the load and again after reloading the changed company table. A mismatch stops the run with a `Raw schema validation failed` message before source freshness or dbt builds. For the SCD2 reload, it truncates `AI_READY_DEMO_RAW.COMPANIES`, then PUTs the company CSV under a fresh UUID filename and copies that staged object into the table. This avoids Snowflake load-history deduplication. The script promotes C0001's changed row to a timestamp newer than the captured baseline, then asserts the raw row's sector and timestamp changed before starting build 2. It checks source freshness and runs three `dbt build --exclude resource_type:seed` passes. The first captures baseline history; build 2 captures the changed version and verifies two SCD2 versions; it fingerprints both fact tables, builds once more, and compares row counts/checksums for idempotency. At the start of each measurement, the script drops and recreates the five derived schemas (staging, intermediate, marts, ai_ready, snapshots); raw is loaded separately. It then records row counts and timings in `results/cloud_runs/<UTC timestamp>_snowflake_<data size>.json`. The dbt role intentionally has no `ACCOUNT_USAGE` access. Measure credits separately as `ACCOUNTADMIN`; Snowflake usage history can lag by up to about 3 hours. Preserve each dated result file. Snapshot work runs in DAG order inside each build; it is not a separate `dbt snapshot` step.
+
+As `ACCOUNTADMIN`, query warehouse credits with UTC timestamp bounds (replace the interval with the measurement hour):
+
+```sql
+SELECT WAREHOUSE_NAME, SUM(CREDITS_USED) AS CREDITS_USED
+FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+WHERE WAREHOUSE_NAME = 'AI_READY_XS_WH'
+  AND START_TIME >= '2026-10-27 16:00:00 +00:00'::TIMESTAMP_TZ
+  AND START_TIME <  '2026-10-27 17:00:00 +00:00'::TIMESTAMP_TZ
+GROUP BY WAREHOUSE_NAME;
+```
+
+`AIRDW_ROLE` intentionally has no `ACCOUNT_USAGE` access. Run dbt and teardown as `AIRDW_ROLE`, never as `ACCOUNTADMIN`; the credits query is a separate `ACCOUNTADMIN` task. Metering latency can reach approximately 3 hours.
 
 The model applies a clustering key to `fct_holdings_daily` on `date_key` and `company_sk`. The warehouse is XSMALL and auto-suspends after 60 seconds. Do not raise the warehouse size for the demo without setting a new cost limit first.
 
