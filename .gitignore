@@ -1,0 +1,11 @@
+_brief/
+.venv/
+__pycache__/
+.pytest_cache/
+target/
+dbt_packages/
+logs/
+data/generated/
+.env
+profiles.yml
+*.py[cod]

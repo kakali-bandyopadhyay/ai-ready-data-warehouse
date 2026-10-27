@@ -1,0 +1,251 @@
+version: 2
+models:
+  - name: stg_funds
+    description: Typed, deduplicated synthetic fund source.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: fund_id
+        description: Synthetic natural key.
+        data_tests: [not_null, unique]
+      - name: fund_nav
+        description: Illustrative fund net asset value in USD.
+  - name: stg_companies
+    description: Latest currently-arrived synthetic company attributes.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: company_id
+        description: Synthetic company identifier.
+        data_tests: [not_null, unique]
+      - name: parent_group_id
+        description: Synthetic parent group identifier when present.
+      - name: sector
+        description: Current synthetic sector attribute.
+  - name: stg_holdings
+    description: Deduplicated, referentially valid daily holdings.
+    columns:
+      - name: holding_id
+        data_tests: [not_null, unique]
+  - name: stg_transactions
+    description: Deduplicated transactions with source ingestion time retained for late arrival handling.
+    columns:
+      - name: transaction_id
+        data_tests: [not_null, unique]
+      - name: transaction_type
+        data_tests:
+          - accepted_values:
+              arguments: {values: ['investment', 'realization', 'follow_on']}
+  - name: stg_valuations
+    description: Deduplicated and referentially valid synthetic valuations.
+    data_tests: [no_future_valuations]
+    columns:
+      - name: valuation_id
+        description: Synthetic valuation record key.
+        data_tests: [not_null, unique]
+  - name: dim_fund
+    description: Fund dimension in the synthetic star schema.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: fund_id
+        data_type: text
+        constraints: [{type: not_null}]
+        data_tests: [not_null, unique]
+        description: Stable synthetic fund key.
+      - name: fund_name
+        data_type: text
+        description: Synthetic fund display name.
+      - name: base_currency
+        data_type: text
+        description: Currency used for illustrative fund values.
+      - name: vintage_year
+        data_type: integer
+        description: Illustrative fund inception vintage.
+      - name: fund_nav
+        data_type: numeric(18,2)
+        description: Synthetic net asset value in base currency.
+  - name: dim_company
+    description: Company dimension with snapshot-backed SCD Type 2 history and parent groups.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: company_sk
+        data_type: text
+        data_tests: [not_null, unique]
+        description: Snapshot-generated stable key for this company version.
+      - name: company_id
+        data_type: text
+        data_tests: [not_null]
+        description: Synthetic natural company key shared across versions.
+      - name: parent_group_id
+        data_type: text
+        description: Synthetic parent-group identifier when known.
+      - name: company_name
+        data_type: text
+        description: Synthetic company display name for this version.
+      - name: sector
+        data_type: text
+        description: Sector label as of this company version.
+      - name: country_code
+        data_type: text
+        description: Illustrative two-letter country code.
+      - name: employee_count
+        data_type: integer
+        description: Synthetic employee estimate for this version.
+      - name: annual_revenue
+        data_type: numeric(18,2)
+        description: Synthetic annual revenue estimate.
+      - name: valid_from
+        data_type: timestamp with time zone
+        description: Timestamp at which this snapshot version became valid.
+      - name: valid_to
+        data_type: timestamp with time zone
+        description: Timestamp at which this version stopped being current; null means current.
+      - name: is_current
+        data_type: boolean
+        description: True for the single current version of a company.
+    data_tests: [one_current_company]
+  - name: dim_date
+    description: Calendar dimension spanning all synthetic fact dates.
+    columns:
+      - name: date_key
+        data_type: integer
+        data_tests: [not_null, unique]
+        description: Calendar date key in YYYYMMDD form.
+      - name: full_date
+        data_type: date
+        description: Calendar date.
+      - name: year_number
+        data_type: smallint
+        description: Calendar year number.
+      - name: quarter_number
+        data_type: smallint
+        description: Calendar quarter number.
+      - name: month_number
+        data_type: smallint
+        description: Calendar month number.
+      - name: month_name
+        data_type: text
+        description: Abbreviated month name.
+      - name: day_of_month
+        data_type: smallint
+        description: Day number within the month.
+      - name: iso_day_of_week
+        data_type: smallint
+        description: ISO weekday number, Monday=1 through Sunday=7.
+      - name: is_weekend
+        data_type: boolean
+        description: True for Saturday or Sunday.
+  - name: fct_holdings_daily
+    description: Daily positions at fund and company grain; incremental merge keyed by holding_id.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: holding_id
+        data_type: text
+        constraints: [{type: not_null}]
+        data_tests: [not_null, unique]
+        description: Stable synthetic daily holding identifier.
+      - name: fund_id
+        data_type: text
+        data_tests: [relationships: {arguments: {to: ref('dim_fund'), field: fund_id}}]
+        description: Fund dimension key.
+      - name: company_sk
+        data_type: text
+        data_tests: [relationships: {arguments: {to: ref('dim_company'), field: company_sk}}]
+        description: Current company-version dimension key.
+      - name: date_key
+        data_type: integer
+        data_tests: [relationships: {arguments: {to: ref('dim_date'), field: date_key}}]
+        description: Daily position date dimension key.
+      - name: units
+        data_type: numeric(20,4)
+        description: Synthetic units held.
+      - name: price
+        data_type: numeric(18,4)
+        description: Synthetic unit price.
+      - name: market_value
+        data_type: numeric(20,2)
+        description: Synthetic position value, units multiplied by price.
+      - name: ingested_at
+        data_type: timestamp with time zone
+        description: Source ingestion timestamp used for traceability.
+    data_tests: [holdings_nav_reconcile]
+  - name: fct_transactions
+    description: Incremental transaction fact, with a rolling late-arrival lookback on ingestion time.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}}
+    columns:
+      - name: transaction_id
+        data_type: text
+        constraints: [{type: not_null}]
+        data_tests: [not_null, unique]
+        description: Stable synthetic transaction identifier.
+      - name: fund_id
+        data_type: text
+        data_tests: [relationships: {arguments: {to: ref('dim_fund'), field: fund_id}}]
+        description: Fund dimension key.
+      - name: company_sk
+        data_type: text
+        data_tests: [relationships: {arguments: {to: ref('dim_company'), field: company_sk}}]
+        description: Current company-version dimension key.
+      - name: date_key
+        data_type: integer
+        data_tests: [relationships: {arguments: {to: ref('dim_date'), field: date_key}}]
+        description: Business transaction date dimension key.
+      - name: amount
+        data_type: numeric(20,2)
+        description: Synthetic transaction amount in transaction currency.
+      - name: transaction_type
+        data_type: text
+        description: Illustrative event category.
+      - name: currency
+        data_type: text
+        description: Transaction currency code.
+      - name: ingested_at
+        data_type: timestamp with time zone
+        description: Arrival timestamp used for late-data overlap processing.
+      - name: batch_id
+        data_type: text
+        description: Synthetic source batch label.
+  - name: ai_company_profile
+    description: Curated, PII-free retrieval context for synthetic portfolio companies.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: true}}
+    columns:
+      - name: company_id
+        description: Synthetic company identifier.
+        data_tests: [not_null, unique]
+      - name: company_name
+        description: Synthetic company display name.
+      - name: sector
+        description: Current synthetic sector.
+      - name: country_code
+        description: Illustrative two-letter country code.
+      - name: parent_group_id
+        description: Synthetic parent group identifier when known.
+      - name: employee_count
+        description: Synthetic employee estimate.
+      - name: annual_revenue
+        description: Synthetic annual revenue estimate.
+      - name: revenue_growth_pct
+        description: Synthetic revenue growth rate.
+      - name: ebitda_margin_pct
+        description: Synthetic EBITDA margin rate.
+      - name: lineage
+        description: Source models used to curate the row.
+  - name: ai_text_chunks
+    description: Short synthetic company note chunks with provenance and optional vector.
+    config: {meta: {owner: data_platform, classification: synthetic_public, ai_ready: true}}
+    columns:
+      - name: chunk_id
+        data_tests: [not_null, unique]
+        description: Stable identifier for the synthetic source note chunk.
+      - name: company_id
+        description: Synthetic company associated with the note.
+      - name: chunk_text
+        description: Synthetic note text used to demonstrate retrieval.
+      - name: source_name
+        description: Source system label for this synthetic note.
+      - name: as_of_date
+        description: Date for which this note is illustrative.
+      - name: owner
+        description: Data owner label.
+      - name: classification
+        description: Data classification label.
+      - name: embedding
+        description: Eight-dimensional test-only or optional API vector; test vectors are not semantic.

@@ -1,0 +1,8 @@
+flowchart TD
+  IN["Regenerated source rows"] --> SEED["dbt seed full refresh"]
+  SEED --> SNAP["Snapshot by company key and source timestamp"]
+  SNAP --> HIST["Company history: prior rows close, current row stays open"]
+  SEED --> FACT["Incremental facts: merge on stable fact key"]
+  FACT --> LATE["90-day ingestion-time overlap reprocesses late transactions"]
+  LATE --> CK["Two builds: compare counts and deterministic checksums"]
+  CK --> PASS["Idempotency check"]

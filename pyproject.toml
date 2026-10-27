@@ -1,0 +1,10 @@
+[project]
+name = "ai-ready-data-warehouse"
+version = "0.1.0"
+description = "Synthetic private-markets warehouse with an AI-ready retrieval layer"
+requires-python = ">=3.12,<3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+

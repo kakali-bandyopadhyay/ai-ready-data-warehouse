@@ -1,0 +1,27 @@
+version: 2
+exposures:
+  - name: synthetic_warehouse_bi
+    label: Synthetic warehouse BI consumer
+    type: dashboard
+    maturity: low
+    description: Dimensional facts and dimensions for a local BI demonstration.
+    owner:
+      name: Data Platform
+      email: data-platform@example.invalid
+    depends_on:
+      - ref('fct_holdings_daily')
+      - ref('fct_transactions')
+      - ref('dim_fund')
+      - ref('dim_company')
+      - ref('dim_date')
+  - name: synthetic_ai_retrieval
+    label: Synthetic AI-ready retrieval consumer
+    type: application
+    maturity: low
+    description: PII-free profile and note chunks used by the pgvector search demo.
+    owner:
+      name: Data Platform
+      email: data-platform@example.invalid
+    depends_on:
+      - ref('ai_company_profile')
+      - ref('ai_text_chunks')

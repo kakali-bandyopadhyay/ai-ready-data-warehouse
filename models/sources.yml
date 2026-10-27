@@ -1,0 +1,25 @@
+version: 2
+sources:
+  - name: raw
+    schema: raw
+    description: Synthetic source extracts produced by generator/generate.py.
+    meta: {owner: data_platform, classification: synthetic_public, ai_ready: false}
+    loaded_at_field: loaded_at
+    freshness:
+      warn_after: {count: 31, period: day}
+      error_after: {count: 90, period: day}
+    tables:
+      - name: funds
+        description: Synthetic fund-level attributes and illustrative NAV.
+      - name: companies
+        description: Synthetic companies, parent groups, and dated attribute versions.
+      - name: holdings
+        description: Synthetic daily positions; includes one duplicate and one orphan key.
+      - name: transactions
+        description: Synthetic investments and realizations with ingestion timestamps.
+      - name: valuations
+        description: Synthetic dated enterprise-value estimates.
+      - name: company_kpis
+        description: Synthetic company growth and margin indicators.
+      - name: company_notes
+        description: Short synthetic notes for retrieval demonstrations.

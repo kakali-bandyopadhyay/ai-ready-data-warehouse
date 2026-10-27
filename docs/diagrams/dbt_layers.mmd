@@ -1,0 +1,7 @@
+flowchart TD
+  R["raw: generator CSV seeds"] --> S["staging: typed and deduplicated"]
+  S --> I["intermediate: enriched business logic"]
+  I --> M["marts: star schema facts and dimensions"]
+  S --> A["ai_ready: curated profiles and text chunks"]
+  M -. "consumer-ready metrics" .-> BI["BI exposure"]
+  A -. "retrieval-ready context" .-> APP["AI application exposure"]

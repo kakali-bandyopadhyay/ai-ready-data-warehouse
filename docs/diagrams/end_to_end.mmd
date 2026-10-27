@@ -1,0 +1,8 @@
+flowchart LR
+  G["Synthetic generator"] --> CSV["CSV source extracts"]
+  CSV --> PG["PostgreSQL + pgvector raw schema"]
+  PG --> DBT["dbt staging, intermediate, marts"]
+  DBT --> AI["AI-ready profiles and chunks"]
+  AI --> EMB["Test-only or optional API embeddings"]
+  EMB --> VS["pgvector cosine search"]
+  PG --> DOCS["dbt docs and lineage"]

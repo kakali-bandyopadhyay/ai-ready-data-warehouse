@@ -1,0 +1,43 @@
+name: ai_ready_data_warehouse
+version: 1.0.0
+config-version: 2
+profile: ai_ready_data_warehouse
+model-paths: [models]
+seed-paths: [data/generated]
+snapshot-paths: [snapshots]
+test-paths: [tests/dbt]
+macro-paths: [macros]
+analysis-paths: [analyses]
+docs-paths: [docs]
+target-path: target
+clean-targets: [target, dbt_packages]
+on-run-start:
+  - "create extension if not exists vector"
+vars:
+  synthetic_as_of: "2026-10-27"
+seeds:
+  ai_ready_data_warehouse:
+    +schema: raw
+    +quote_columns: false
+models:
+  ai_ready_data_warehouse:
+    +materialized: view
+    +meta:
+      owner: data_platform
+      classification: synthetic_public
+      ai_ready: false
+    staging:
+      +schema: staging
+    intermediate:
+      +schema: intermediate
+    marts:
+      +schema: marts
+    ai_ready:
+      +schema: ai_ready
+      +meta:
+        ai_ready: true
+snapshots:
+  ai_ready_data_warehouse:
+    +target_schema: snapshots
+    +strategy: timestamp
+    +updated_at: ingested_at

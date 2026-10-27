@@ -1,0 +1,9 @@
+flowchart LR
+  NOTE["Synthetic company notes"] --> CHUNK["ai_text_chunks with provenance"]
+  CHUNK --> EMB["8D deterministic test vectors or optional API vectors"]
+  EMB --> INDEX["Postgres HNSW cosine index"]
+  QUERY["User query"] --> QEMB["Same embedding provider"]
+  QEMB --> SEARCH["search_similar(query, k)"]
+  INDEX --> SEARCH
+  SEARCH --> RESULT["Top-k chunks with source and as-of date"]
+  RESULT --> LLM["Optional downstream LLM context"]

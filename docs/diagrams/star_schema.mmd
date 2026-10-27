@@ -1,0 +1,42 @@
+erDiagram
+  DIM_FUND ||--o{ FCT_HOLDINGS_DAILY : owns
+  DIM_COMPANY ||--o{ FCT_HOLDINGS_DAILY : describes
+  DIM_DATE ||--o{ FCT_HOLDINGS_DAILY : dates
+  DIM_FUND ||--o{ FCT_TRANSACTIONS : owns
+  DIM_COMPANY ||--o{ FCT_TRANSACTIONS : describes
+  DIM_DATE ||--o{ FCT_TRANSACTIONS : dates
+  DIM_FUND {
+    string fund_id PK
+    string fund_name
+    integer vintage_year
+    decimal fund_nav
+  }
+  DIM_COMPANY {
+    string company_sk PK
+    string company_id
+    string parent_group_id
+    string sector
+    timestamp valid_from
+    timestamp valid_to
+    boolean is_current
+  }
+  DIM_DATE {
+    integer date_key PK
+    date full_date
+    integer year_number
+    integer month_number
+  }
+  FCT_HOLDINGS_DAILY {
+    string holding_id PK
+    string fund_id FK
+    string company_sk FK
+    integer date_key FK
+    decimal market_value
+  }
+  FCT_TRANSACTIONS {
+    string transaction_id PK
+    string fund_id FK
+    string company_sk FK
+    integer date_key FK
+    decimal amount
+  }

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_DB: warehouse
+          POSTGRES_USER: warehouse
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U warehouse -d warehouse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: ci-only-password
+      WAREHOUSE_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run end-to-end pipeline
+        run: python pipeline/run.py --target postgres
+      - name: Run pytest suite
+        env:
+          WAREHOUSE_INTEGRATION: "1"
+        run: pytest -q
+      - name: Repeat end-to-end pipeline for idempotency
+        run: python pipeline/run.py --target postgres
+      - name: Export Mermaid diagrams to PNG
+        run: |
+          mkdir -p docs/img
+          for diagram in docs/diagrams/*.mmd; do
+            name="$(basename "$diagram" .mmd)"
+            npx --yes --package @mermaid-js/mermaid-cli@11.4.2 mmdc \
+              -i "$diagram" -o "docs/img/$name.png" -b white
+          done
+          test "$(find docs/img -maxdepth 1 -name '*.png' | wc -l)" -eq 5
+      - name: Upload Phase 1 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-1-postgres-artifacts
+          path: |
+            docs/img/*.png
+            target/
+          if-no-files-found: error
+          retention-days: 14
