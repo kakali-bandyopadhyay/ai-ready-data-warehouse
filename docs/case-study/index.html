@@ -8,7 +8,7 @@
 <style>
 :root{color-scheme:light dark;--bg:#f7f8fa;--card:#fff;--ink:#1d2433;--mute:#5b6475;--line:#e3e6ec;--accent:#1f4e8c;--accent-bg:#eef1f7}
 @media(prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1a1f27;--ink:#e6e9ef;--mute:#9aa3b2;--line:#2b3240;--accent:#8fb4ea;--accent-bg:#232a38}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:920px;margin:0 auto;padding:40px 16px 64px}a{color:var(--accent)}h1{font-size:30px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:40px 0 12px}.sub{color:var(--mute);font-size:17px}.note{background:var(--accent-bg);border-radius:8px;padding:10px 14px;font-size:14px;color:var(--mute)}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}figure{width:100%;margin:16px 0}figure a{display:block}figure img{display:block;width:100%;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}figcaption,.mute{color:var(--mute);font-size:14px}nav{font-size:14px;margin-bottom:24px}footer{margin-top:48px;color:var(--mute);font-size:13px}.links a{margin-right:14px;font-weight:600;font-size:15px}ul{padding-left:20px}li{margin:4px 0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:920px;margin:0 auto;padding:40px 16px 64px}a{color:var(--accent)}h1{font-size:30px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:40px 0 12px}.sub{color:var(--mute);font-size:17px}.note{background:var(--accent-bg);border-radius:8px;padding:10px 14px;font-size:14px;color:var(--mute)}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}figure{width:100%;margin:16px 0}figure a{display:block}figure img{display:block;width:100%;max-width:960px;max-height:70vh;height:auto;object-fit:contain;margin:0 auto;border:1px solid var(--line);border-radius:8px;background:#fff}figcaption,.mute{color:var(--mute);font-size:14px}nav{font-size:14px;margin-bottom:24px}footer{margin-top:48px;color:var(--mute);font-size:13px}.links a{margin-right:14px;font-weight:600;font-size:15px}ul{padding-left:20px}li{margin:4px 0}
 </style>
 </head>
 <body>
@@ -33,13 +33,15 @@
 <section aria-labelledby="results">
 <h2 id="results">Three-platform results</h2>
 <p>Runs used synthetic data covering 30 days and 400 companies on 27 Oct 2026. Source: <a href="../../FINDINGS.md">FINDINGS.md</a>.</p>
+<p>Final row counts identical on all three platforms (synthetic, 30 days / 400 companies): companies 400; holdings 1,940; dim_company 401; transactions 800; text chunks 400</p>
+<p class="mute"><small>Raw inputs included deliberate duplicates (401 -&gt; 400 companies, 1,942 -&gt; 1,940 holdings) removed in staging.</small></p>
 <div class="wrap">
 <table id="results-table">
-<thead><tr><th scope="col">Platform</th><th scope="col">Rows (same synthetic dataset)</th><th scope="col">Load</th><th scope="col">Builds</th><th scope="col">Recorded cost</th></tr></thead>
+<thead><tr><th scope="col">Platform</th><th scope="col">Load</th><th scope="col">Build time</th><th scope="col">Recorded cost</th></tr></thead>
 <tbody>
-<tr><th scope="row">PostgreSQL 16 + pgvector (local)</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>Not captured</td><td>3 builds; elapsed time not captured</td><td>Local Docker; cost not captured</td></tr>
-<tr><th scope="row">Snowflake</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>18.5 s</td><td>71.1 s</td><td>0.133 credits in the run hour (upper bound); 0.464 credits for the whole session</td></tr>
-<tr><th scope="row">Databricks</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>137.9 s</td><td>393.5 s</td><td>DBUs not captured; Free Edition billing showed only assistant usage</td></tr>
+<tr><th scope="row">PostgreSQL 16 + pgvector (local)</th><td>Not measured</td><td>Not measured</td><td>Local Docker - no cost</td></tr>
+<tr><th scope="row">Snowflake</th><td>18.5 s</td><td>71.1 s</td><td>0.133 credits in the run hour (upper bound); 0.464 credits for the whole session</td></tr>
+<tr><th scope="row">Databricks</th><td>137.9 s</td><td>393.5 s</td><td>DBUs not captured; Free Edition billing showed only assistant usage</td></tr>
 </tbody>
 </table>
 </div>
@@ -58,7 +60,7 @@
 <section aria-labelledby="lineage">
 <h2 id="lineage">Lineage</h2>
 <figure>
-<a href="img/dbt_lineage_layers.png" target="_blank" rel="noopener" aria-label="Open the generated dbt lineage image full size"><img src="img/dbt_lineage_layers.png" alt="Generated dbt lineage graph with source, staging, intermediate, mart, snapshot and AI-ready nodes connected by their dbt dependencies."></a>
+<a href="img/dbt_lineage_layers.svg" target="_blank" rel="noopener" aria-label="Open the generated dbt lineage image full size"><img src="img/dbt_lineage_layers.svg" alt="Generated dbt lineage graph with source, staging, intermediate, mart, snapshot and AI-ready nodes connected by their dbt dependencies."></a>
 <figcaption>Generated from dbt manifest.json (synthetic project)</figcaption>
 </figure>
 </section>

@@ -1,4 +1,4 @@
-flowchart TB
+flowchart LR
   subgraph sources["sources"]
     direction TB
     node_source_ai_ready_data_warehouse_raw_companies_e7f4565a["raw.companies"]
@@ -19,6 +19,10 @@ flowchart TB
     node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b["stg_transactions"]
     node_model_ai_ready_data_warehouse_stg_valuations_2c593a3a["stg_valuations"]
   end
+  subgraph snapshots["snapshots"]
+    direction TB
+    node_snapshot_ai_ready_data_warehouse_company_history_81110657["company_history"]
+  end
   subgraph intermediate["intermediate"]
     direction TB
     node_model_ai_ready_data_warehouse_int_holdings_enriched_ee771809["int_holdings_enriched"]
@@ -32,12 +36,39 @@ flowchart TB
     node_model_ai_ready_data_warehouse_fct_holdings_daily_9920366e["fct_holdings_daily"]
     node_model_ai_ready_data_warehouse_fct_transactions_3769045b["fct_transactions"]
   end
-  subgraph snapshots["snapshots"]
-    direction TB
-    node_snapshot_ai_ready_data_warehouse_company_history_81110657["company_history"]
-  end
   subgraph ai_ready["ai_ready"]
     direction TB
     node_model_ai_ready_data_warehouse_ai_company_profile_0891125f["ai_company_profile"]
     node_model_ai_ready_data_warehouse_ai_text_chunks_9af334d9["ai_text_chunks"]
   end
+  node_model_ai_ready_data_warehouse_dim_company_4d37b89e --> node_model_ai_ready_data_warehouse_fct_holdings_daily_9920366e
+  node_model_ai_ready_data_warehouse_dim_company_4d37b89e --> node_model_ai_ready_data_warehouse_fct_transactions_3769045b
+  node_model_ai_ready_data_warehouse_int_holdings_enriched_ee771809 --> node_model_ai_ready_data_warehouse_fct_holdings_daily_9920366e
+  node_model_ai_ready_data_warehouse_int_transactions_enriched_e4f4135d --> node_model_ai_ready_data_warehouse_fct_transactions_3769045b
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_int_holdings_enriched_ee771809
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_int_transactions_enriched_e4f4135d
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_stg_company_notes_dd023225
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_stg_holdings_9bc5c458
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_model_ai_ready_data_warehouse_stg_valuations_2c593a3a
+  node_model_ai_ready_data_warehouse_stg_companies_7bba4995 --> node_snapshot_ai_ready_data_warehouse_company_history_81110657
+  node_model_ai_ready_data_warehouse_stg_company_kpis_1d51bb93 --> node_model_ai_ready_data_warehouse_ai_company_profile_0891125f
+  node_model_ai_ready_data_warehouse_stg_company_notes_dd023225 --> node_model_ai_ready_data_warehouse_ai_text_chunks_9af334d9
+  node_model_ai_ready_data_warehouse_stg_funds_6cd881f5 --> node_model_ai_ready_data_warehouse_dim_fund_ce019985
+  node_model_ai_ready_data_warehouse_stg_funds_6cd881f5 --> node_model_ai_ready_data_warehouse_int_holdings_enriched_ee771809
+  node_model_ai_ready_data_warehouse_stg_funds_6cd881f5 --> node_model_ai_ready_data_warehouse_stg_holdings_9bc5c458
+  node_model_ai_ready_data_warehouse_stg_funds_6cd881f5 --> node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b
+  node_model_ai_ready_data_warehouse_stg_holdings_9bc5c458 --> node_model_ai_ready_data_warehouse_dim_date_be8db6a0
+  node_model_ai_ready_data_warehouse_stg_holdings_9bc5c458 --> node_model_ai_ready_data_warehouse_int_holdings_enriched_ee771809
+  node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b --> node_model_ai_ready_data_warehouse_dim_date_be8db6a0
+  node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b --> node_model_ai_ready_data_warehouse_int_transactions_enriched_e4f4135d
+  node_model_ai_ready_data_warehouse_stg_valuations_2c593a3a --> node_model_ai_ready_data_warehouse_dim_date_be8db6a0
+  node_snapshot_ai_ready_data_warehouse_company_history_81110657 --> node_model_ai_ready_data_warehouse_ai_company_profile_0891125f
+  node_snapshot_ai_ready_data_warehouse_company_history_81110657 --> node_model_ai_ready_data_warehouse_dim_company_4d37b89e
+  node_source_ai_ready_data_warehouse_raw_companies_e7f4565a --> node_model_ai_ready_data_warehouse_stg_companies_7bba4995
+  node_source_ai_ready_data_warehouse_raw_company_kpis_f77a8faa --> node_model_ai_ready_data_warehouse_stg_company_kpis_1d51bb93
+  node_source_ai_ready_data_warehouse_raw_company_notes_5dbd3198 --> node_model_ai_ready_data_warehouse_stg_company_notes_dd023225
+  node_source_ai_ready_data_warehouse_raw_funds_920fb334 --> node_model_ai_ready_data_warehouse_stg_funds_6cd881f5
+  node_source_ai_ready_data_warehouse_raw_holdings_bbb0329c --> node_model_ai_ready_data_warehouse_stg_holdings_9bc5c458
+  node_source_ai_ready_data_warehouse_raw_transactions_d74bf14d --> node_model_ai_ready_data_warehouse_stg_transactions_151a9f0b
+  node_source_ai_ready_data_warehouse_raw_valuations_44b470dd --> node_model_ai_ready_data_warehouse_stg_valuations_2c593a3a

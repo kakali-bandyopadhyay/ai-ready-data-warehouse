@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-LAYERS = ("sources", "staging", "intermediate", "marts", "snapshots", "ai_ready")
+LAYERS = ("sources", "staging", "snapshots", "intermediate", "marts", "ai_ready")
 RESOURCE_LAYER = {"source": "sources", "snapshot": "snapshots"}
 
 
@@ -53,7 +53,7 @@ def _label(node: dict[str, Any]) -> str:
 
 
 def render_lineage(manifest: dict[str, Any]) -> str:
-    """Return a top-to-bottom Mermaid flowchart from a dbt manifest mapping."""
+    """Return a left-to-right Mermaid flowchart from a dbt manifest mapping."""
     selected: dict[str, dict[str, Any]] = {}
     for section in ("nodes", "sources"):
         for unique_id, node in manifest.get(section, {}).items():
@@ -64,7 +64,7 @@ def render_lineage(manifest: dict[str, Any]) -> str:
     for unique_id, node in selected.items():
         layers[_layer_for(node)].append(unique_id)
 
-    lines = ["flowchart TB"]
+    lines = ["flowchart LR"]
     for layer in LAYERS:
         lines.append(f'  subgraph {layer}["{layer}"]')
         lines.append("    direction TB")
@@ -73,12 +73,17 @@ def render_lineage(manifest: dict[str, Any]) -> str:
             lines.append(f'    {node_id}["{_label(selected[unique_id])}"]')
         lines.append("  end")
 
-    edges: set[tuple[str, str]] = set()
+    edges: list[tuple[str, str]] = []
     for unique_id, node in selected.items():
+        if node.get("resource_type") not in {"model", "snapshot"}:
+            continue
         dependent_id = _mermaid_id(unique_id)
-        for dependency_id in node.get("depends_on", {}).get("node_ids", []):
-            if dependency_id in selected:
-                edges.add((_mermaid_id(dependency_id), dependent_id))
+        for dependency_id in node.get("depends_on", {}).get("nodes", []):
+            if dependency_id not in selected:
+                raise ValueError(
+                    f"Dependency {dependency_id!r} of {unique_id!r} is not a rendered node"
+                )
+            edges.append((_mermaid_id(dependency_id), dependent_id))
     for source_id, dependent_id in sorted(edges):
         lines.append(f"  {source_id} --> {dependent_id}")
     return "\n".join(lines) + "\n"

@@ -4,31 +4,31 @@
       "resource_type": "model",
       "name": "stg_accounts",
       "fqn": ["demo", "staging", "stg_accounts"],
-      "depends_on": {"node_ids": ["source.demo.raw.accounts"]}
+      "depends_on": {"nodes": ["source.demo.raw.accounts"]}
     },
     "model.demo.int_accounts": {
       "resource_type": "model",
       "name": "int_accounts",
       "fqn": ["demo", "intermediate", "int_accounts"],
-      "depends_on": {"node_ids": ["model.demo.stg_accounts"]}
+      "depends_on": {"nodes": ["model.demo.stg_accounts"]}
     },
     "model.demo.dim_accounts": {
       "resource_type": "model",
       "name": "dim_accounts",
       "fqn": ["demo", "marts", "dim_accounts"],
-      "depends_on": {"node_ids": ["model.demo.int_accounts"]}
+      "depends_on": {"nodes": ["model.demo.int_accounts"]}
     },
     "model.demo.ai_account_profile": {
       "resource_type": "model",
       "name": "ai_account_profile",
       "fqn": ["demo", "ai_ready", "ai_account_profile"],
-      "depends_on": {"node_ids": ["model.demo.dim_accounts"]}
+      "depends_on": {"nodes": ["model.demo.dim_accounts"]}
     },
     "snapshot.demo.account_history": {
       "resource_type": "snapshot",
       "name": "account_history",
       "fqn": ["demo", "account_history"],
-      "depends_on": {"node_ids": ["model.demo.stg_accounts"]}
+      "depends_on": {"nodes": ["model.demo.stg_accounts"]}
     }
   },
   "sources": {
@@ -36,7 +36,7 @@
       "resource_type": "source",
       "source_name": "raw",
       "name": "accounts",
-      "depends_on": {"node_ids": []}
+      "depends_on": {"nodes": []}
     }
   }
 }
