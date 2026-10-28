@@ -34,7 +34,6 @@
 <h2 id="results">Three-platform results</h2>
 <p>Runs used synthetic data covering 30 days and 400 companies on 27 Oct 2026. Source: <a href="../../FINDINGS.md">FINDINGS.md</a>.</p>
 <p>Final row counts identical on all three platforms (synthetic, 30 days / 400 companies): companies 400; holdings 1,940; dim_company 401; transactions 800; text chunks 400</p>
-<p class="mute"><small>Raw inputs included deliberate duplicates (401 -&gt; 400 companies, 1,942 -&gt; 1,940 holdings) removed in staging.</small></p>
 <div class="wrap">
 <table id="results-table">
 <thead><tr><th scope="col">Platform</th><th scope="col">Load</th><th scope="col">Build time</th><th scope="col">Recorded cost</th></tr></thead>
@@ -45,6 +44,7 @@
 </tbody>
 </table>
 </div>
+<p class="mute"><small>Raw inputs include deliberate duplicates (401 -&gt; 400 companies, 1,942 -&gt; 1,940 holdings), removed in staging. dim_company is an SCD2 dimension: 400 companies plus one historical version.</small></p>
 <p class="mute">This is one small run, not a benchmark; the tiers and timing scope differ across platforms.</p>
 </section>
 
