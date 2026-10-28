@@ -12,6 +12,7 @@ class PageParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.images: list[dict[str, str | None]] = []
+        self.link_rels: set[str] = set()
         self.in_results_table = False
         self.results_table_text: list[str] = []
 
@@ -19,6 +20,8 @@ class PageParser(HTMLParser):
         attributes = dict(attrs)
         if tag == "img":
             self.images.append(attributes)
+        if tag == "link":
+            self.link_rels.update((attributes.get("rel") or "").lower().split())
         if tag == "table" and attributes.get("id") == "results-table":
             self.in_results_table = True
 
@@ -40,6 +43,12 @@ def test_case_study_images_exist_and_have_alt_text() -> None:
         assert image["alt"].strip()
         assert image.get("src")
         assert (PAGE.parent / str(image["src"])).is_file()
+
+
+def test_case_study_has_favicon_link() -> None:
+    parser = PageParser()
+    parser.feed(PAGE.read_text(encoding="utf-8"))
+    assert "icon" in parser.link_rels
 
 
 def test_results_figures_are_recorded_in_findings() -> None:
