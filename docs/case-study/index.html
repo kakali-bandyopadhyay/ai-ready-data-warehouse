@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI-ready data warehouse case study</title>
+<meta name="description" content="A static case study of a synthetic, three-platform data warehouse and AI-ready layer.">
+<style>
+:root{color-scheme:light dark;--bg:#f7f8fa;--card:#fff;--ink:#1d2433;--mute:#5b6475;--line:#e3e6ec;--accent:#1f4e8c;--accent-bg:#eef1f7}
+@media(prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1a1f27;--ink:#e6e9ef;--mute:#9aa3b2;--line:#2b3240;--accent:#8fb4ea;--accent-bg:#232a38}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:920px;margin:0 auto;padding:40px 16px 64px}a{color:var(--accent)}h1{font-size:30px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:40px 0 12px}.sub{color:var(--mute);font-size:17px}.note{background:var(--accent-bg);border-radius:8px;padding:10px 14px;font-size:14px;color:var(--mute)}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}figure{margin:16px 0}figcaption,.mute{color:var(--mute);font-size:14px}nav{font-size:14px;margin-bottom:24px}footer{margin-top:48px;color:var(--mute);font-size:13px}.links a{margin-right:14px;font-weight:600;font-size:15px}ul{padding-left:20px}li{margin:4px 0}
+</style>
+</head>
+<body>
+<main>
+<nav aria-label="Breadcrumb"><a href="../../">Portfolio</a></nav>
+<h1>AI-ready data warehouse: one dbt project across three platforms</h1>
+<p class="sub">Personal prototype on synthetic data showing data-warehouse and lakehouse engineering; not production software.</p>
+
+<section aria-labelledby="problem">
+<h2 id="problem">Problem</h2>
+<p>Private-markets data combines holdings, transactions, company attributes and narrative notes with different grains and update patterns. A tested star schema makes those records consistent and traceable, while an AI-ready layer can carry concise context with source and date metadata. This prototype uses one dbt project across PostgreSQL, Snowflake and Databricks to demonstrate those patterns on synthetic data.</p>
+</section>
+
+<section aria-labelledby="architecture">
+<h2 id="architecture">Architecture</h2>
+<figure>
+<img src="img/end_to_end.png" alt="End-to-end architecture from synthetic source data through dbt warehouse models to the AI-ready retrieval layer.">
+<figcaption>Synthetic source data flows through typed staging, intermediate transformations and dimensional marts. The AI-ready layer adds selected company profiles and provenance-tagged text chunks for retrieval.</figcaption>
+</figure>
+</section>
+
+<section aria-labelledby="results">
+<h2 id="results">Three-platform results</h2>
+<p>Runs used synthetic data covering 30 days and 400 companies on 27 Oct 2026. Source: <a href="../../FINDINGS.md">FINDINGS.md</a>.</p>
+<div class="wrap">
+<table id="results-table">
+<thead><tr><th scope="col">Platform</th><th scope="col">Rows (same synthetic dataset)</th><th scope="col">Load</th><th scope="col">Builds</th><th scope="col">Recorded cost</th></tr></thead>
+<tbody>
+<tr><th scope="row">PostgreSQL 16 + pgvector (local)</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>Not captured</td><td>3 builds; elapsed time not captured</td><td>Local Docker; cost not captured</td></tr>
+<tr><th scope="row">Snowflake</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>18.5 s</td><td>71.1 s</td><td>0.133 credits in the run hour (upper bound); 0.464 credits for the whole session</td></tr>
+<tr><th scope="row">Databricks</th><td>Companies: 401 to 400; holdings: 1,942 to 1,940; dim_company: 401; transactions: 800; text chunks: 400</td><td>137.9 s</td><td>393.5 s</td><td>DBUs not captured; Free Edition billing showed only assistant usage</td></tr>
+</tbody>
+</table>
+</div>
+<p class="mute">This is one small run, not a benchmark; the tiers and timing scope differ across platforms.</p>
+</section>
+
+<section aria-labelledby="quality">
+<h2 id="quality">Quality evidence</h2>
+<figure>
+<img src="img/snowflake_scd2_query.png" alt="Snowflake query result showing two SCD2 versions for synthetic company C0001, with one current version.">
+<figcaption>Synthetic company C0001 has exactly 2 SCD2 versions and 1 current row. SCD2 and idempotency checks passed on all three platforms.</figcaption>
+</figure>
+<p>The cross-platform summary in <a href="../../FINDINGS.md">FINDINGS.md</a> reports 88 tests and CI green.</p>
+</section>
+
+<section aria-labelledby="lineage">
+<h2 id="lineage">Lineage</h2>
+<figure>
+<img src="img/dbt_lineage.png" alt="dbt lineage graph for the synthetic warehouse, connecting source seeds through staging and intermediate models to marts and AI-ready models.">
+<figcaption>Synthetic data: dbt lineage for the warehouse models.</figcaption>
+</figure>
+</section>
+
+<section aria-labelledby="bugs">
+<h2 id="bugs">Bugs found and fixed during verification</h2>
+<div class="wrap">
+<table>
+<thead><tr><th scope="col">Bug</th><th scope="col">Effect</th><th scope="col">Fix</th></tr></thead>
+<tbody>
+<tr><td>dbt options placed before the command</td><td>Invalid command ordering</td><td>Use one shared command builder.</td></tr>
+<tr><td>Snapshot ran before staging existed</td><td>Required staging relations were missing.</td><td>Run seed, freshness, then build in DAG order.</td></tr>
+<tr><td>Postgres views rebuilt concurrently</td><td>Deadlock during view rebuild.</td><td>Use a single-threaded local target.</td></tr>
+<tr><td>Profile model took 76–102 s</td><td>Repeated company-staging logic slowed the model.</td><td>Remove duplicated staging logic; recorded runtime is about 0.1 s.</td></tr>
+<tr><td>Snowflake COPY reused load metadata</td><td>A reloaded file was skipped.</td><td>Use unique staged file names for each load.</td></tr>
+<tr><td>Staging kept the oldest row per key</td><td>Latest source values could be missed.</td><td>Choose the latest ingested_at and test against raw data.</td></tr>
+<tr><td>UTC timestamps were compared with a non-UTC session timezone</td><td>New rows were treated as future-dated.</td><td>Compare in UTC and set the session timezone to UTC.</td></tr>
+<tr><td>SSO user had no password for automation</td><td>Password-based automation could not authenticate.</td><td>Use a key-pair service user.</td></tr>
+<tr><td>Jinja block tags appeared in profiles.yml</td><td>Profile YAML could not be parsed as intended.</td><td>Use values-only env_var() entries and YAML-load validation.</td></tr>
+<tr><td>A Python file had a UTF-8 BOM</td><td>The BOM broke CI.</td><td>Write UTF-8 without a BOM and check for BOMs.</td></tr>
+<tr><td>CI requires PNG exports for Mermaid diagrams</td><td>A missing or empty diagram PNG fails the export check.</td><td>Export each diagram to its matching docs/img PNG path.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="limitations">
+<h2 id="limitations">Limitations and next</h2>
+<p>All data is synthetic, and the demonstrated run is small. Phase 3 (Neo4j) is not built. Vector search is implemented for PostgreSQL only; cloud vector search is documented, not run. The results do not establish production readiness or a like-for-like platform benchmark.</p>
+</section>
+
+<section aria-labelledby="links">
+<h2 id="links">Project links</h2>
+<p class="links"><a href="https://github.com/kakali-bandyopadhyay/ai-ready-data-warehouse">Repository</a><a href="../../FINDINGS.md">FINDINGS.md</a><a href="../ARCHITECTURE.md">Architecture</a></p>
+</section>
+<footer>Personal prototype · synthetic data · not production software</footer>
+</main>
+</body>
+</html>
