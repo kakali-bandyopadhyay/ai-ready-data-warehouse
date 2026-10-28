@@ -8,7 +8,7 @@
 <style>
 :root{color-scheme:light dark;--bg:#f7f8fa;--card:#fff;--ink:#1d2433;--mute:#5b6475;--line:#e3e6ec;--accent:#1f4e8c;--accent-bg:#eef1f7}
 @media(prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1a1f27;--ink:#e6e9ef;--mute:#9aa3b2;--line:#2b3240;--accent:#8fb4ea;--accent-bg:#232a38}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:920px;margin:0 auto;padding:40px 16px 64px}a{color:var(--accent)}h1{font-size:30px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:40px 0 12px}.sub{color:var(--mute);font-size:17px}.note{background:var(--accent-bg);border-radius:8px;padding:10px 14px;font-size:14px;color:var(--mute)}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}figure{margin:16px 0}figcaption,.mute{color:var(--mute);font-size:14px}nav{font-size:14px;margin-bottom:24px}footer{margin-top:48px;color:var(--mute);font-size:13px}.links a{margin-right:14px;font-weight:600;font-size:15px}ul{padding-left:20px}li{margin:4px 0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:920px;margin:0 auto;padding:40px 16px 64px}a{color:var(--accent)}h1{font-size:30px;line-height:1.2;margin:0 0 8px}h2{font-size:21px;margin:40px 0 12px}.sub{color:var(--mute);font-size:17px}.note{background:var(--accent-bg);border-radius:8px;padding:10px 14px;font-size:14px;color:var(--mute)}.wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:600}figure{width:100%;margin:16px 0}figure a{display:block}figure img{display:block;width:100%;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}figcaption,.mute{color:var(--mute);font-size:14px}nav{font-size:14px;margin-bottom:24px}footer{margin-top:48px;color:var(--mute);font-size:13px}.links a{margin-right:14px;font-weight:600;font-size:15px}ul{padding-left:20px}li{margin:4px 0}
 </style>
 </head>
 <body>
@@ -25,7 +25,7 @@
 <section aria-labelledby="architecture">
 <h2 id="architecture">Architecture</h2>
 <figure>
-<img src="img/end_to_end.png" alt="End-to-end architecture from synthetic source data through dbt warehouse models to the AI-ready retrieval layer.">
+<a href="img/end_to_end.svg" target="_blank" rel="noopener" aria-label="Open the end-to-end architecture image full size"><img src="img/end_to_end.svg" alt="End-to-end architecture from synthetic source data through dbt warehouse models to the AI-ready retrieval layer."></a>
 <figcaption>Synthetic source data flows through typed staging, intermediate transformations and dimensional marts. The AI-ready layer adds selected company profiles and provenance-tagged text chunks for retrieval.</figcaption>
 </figure>
 </section>
@@ -49,7 +49,7 @@
 <section aria-labelledby="quality">
 <h2 id="quality">Quality evidence</h2>
 <figure>
-<img src="img/snowflake_scd2_query.png" alt="Snowflake query result showing two SCD2 versions for synthetic company C0001, with one current version.">
+<a href="img/snowflake_scd2_query.png" target="_blank" rel="noopener" aria-label="Open the SCD2 query image full size"><img src="img/snowflake_scd2_query.png" alt="Snowflake query result showing two SCD2 versions for synthetic company C0001, with one current version."></a>
 <figcaption>Synthetic company C0001 has exactly 2 SCD2 versions and 1 current row. SCD2 and idempotency checks passed on all three platforms.</figcaption>
 </figure>
 <p>The cross-platform summary in <a href="../../FINDINGS.md">FINDINGS.md</a> reports 88 tests and CI green.</p>
@@ -58,8 +58,8 @@
 <section aria-labelledby="lineage">
 <h2 id="lineage">Lineage</h2>
 <figure>
-<img src="img/dbt_lineage.png" alt="dbt lineage graph for the synthetic warehouse, connecting source seeds through staging and intermediate models to marts and AI-ready models.">
-<figcaption>Synthetic data: dbt lineage for the warehouse models.</figcaption>
+<a href="img/dbt_lineage_layers.png" target="_blank" rel="noopener" aria-label="Open the generated dbt lineage image full size"><img src="img/dbt_lineage_layers.png" alt="Generated dbt lineage graph with source, staging, intermediate, mart, snapshot and AI-ready nodes connected by their dbt dependencies."></a>
+<figcaption>Generated from dbt manifest.json (synthetic project)</figcaption>
 </figure>
 </section>
 
